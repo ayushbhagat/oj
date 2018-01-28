@@ -6,6 +6,8 @@ default:
 	make create_scanner_dfa
 
 build:
+	mkdir -p gen
+	chmod +x joosc
 	kotlinc src/* -d gen/oj.jar
 
 convert_dfa_regex_to_char_code:
@@ -15,4 +17,4 @@ create_scanner_dfa:
 	kotlin -cp gen/oj.jar scripts.CreateScannerDFAKt
 
 clean:
-	rm -rf gen/*
+	rm -rf gen
