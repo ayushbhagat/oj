@@ -42,7 +42,7 @@ class Scanner(private val filePath: String, private var dfa: NFA, private val ba
         var lastFinalStateIndex = -1
         var index = 0
         while (index < inputFileString.length) {
-            currentState = dfa.getNextState(currentState, inputFileString[index])
+            currentState = dfa.getNextState(currentState, inputFileString[index].toInt())
             if (currentState.isEmpty()) {
                 if (lastFinalState.isEmpty()) {
                     throw ScannerError()
@@ -50,6 +50,7 @@ class Scanner(private val filePath: String, private var dfa: NFA, private val ba
                     val lexeme =
                             inputFileString.substring(lexemeStartIndex, lastFinalStateIndex + 1)
                     tokens.add(Token(getTokenType(lastFinalState, lexeme), lexeme))
+                    println("${tokens[tokens.size - 1].type} ${tokens[tokens.size - 1].lexeme}")
                     index = lastFinalStateIndex
                     currentState = dfa.startState
                     lexemeStartIndex = lastFinalStateIndex + 1

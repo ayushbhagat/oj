@@ -16,8 +16,8 @@ fun main(args: Array<String>) {
     val scannerDfa = NFA.deserialize("gen/$SCANNER_DFA.dfa", null)
     val scanner = Scanner(args[0], scannerDfa, baseDfas)
     try {
-        val tokens = scanner.tokenize()
-        tokens.forEach { println("${it.type} ${it.lexeme}") }
+        scanner.tokenize()
+        println("Scanner Passes")
     } catch (e: Exception) {
         exitProcess(42)
     }

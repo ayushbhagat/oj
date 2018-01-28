@@ -179,11 +179,11 @@ data class NFA(
      * If reached an error state (i.e. cannot move from the current state on the given character),
      * return an empty string.
      */
-    fun getNextState(currentState: String, c: Char): String {
+    fun getNextState(currentState: String, transition: Int): String {
         if (!isDfa || !states.contains(currentState)) {
             throw ScannerError()
         }
-        return transitionFn[currentState]?.get(c.toInt())?.first().orEmpty()
+        return transitionFn[currentState]?.get(transition)?.first().orEmpty()
     }
 
     /**
