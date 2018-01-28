@@ -23,9 +23,10 @@ data class NFA(
         val isDfa: Boolean = false) {
     companion object {
         /**
-         * Returns the NFA created from the file at the provided file path.
+         * Returns the NFA created from the file at the provided file path and the type.
          * @param filePath The file path that contains the serialization of an NFA. Assumes that
          *      the file name has a ".dfa" extension.
+         * @param type The type of the NFA (i.e. what it is meant to recognize).
          * @return The deserialized NFA.
          */
         fun deserialize(filePath: String, type: NFAType?): NFA {
@@ -178,6 +179,8 @@ data class NFA(
      * Consume the character and move the DFA forward. If the NFA is not a DFA, don't do anything.
      * If reached an error state (i.e. cannot move from the current state on the given character),
      * return an empty string.
+     * @param currentState The current state the DFA is in.
+     * @param transition The ASCII value of the character it is supposed to read.
      */
     fun getNextState(currentState: String, transition: Int): String {
         if (!isDfa || !states.contains(currentState)) {
