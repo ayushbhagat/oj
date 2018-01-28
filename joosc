@@ -1,0 +1,3 @@
+#!/bin/bash
+
+kotlin -cp gen/oj.jar OJKt $1
