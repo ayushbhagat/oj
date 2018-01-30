@@ -20,11 +20,17 @@ fun convertRegexToCharCode(filePath: String) {
                 .indexOf(" ") + 1
         val toState = it.substring(firstSpaceIndex + 1, secondSpaceIndex)
         val transitionRegex = it.substring(secondSpaceIndex + 1)
-        scanner.ALPHABET.forEach {
-            if (transitionRegex.toRegex().matches(it.toString())) {
-                newContent += "$fromState $toState ${it.toInt()}\n"
-            }
-        }
+        scanner.ALPHABET
+                .filterNot { scanner.BACKSLASH_CHARACTERS.values.contains(it) }
+                .union(scanner.BACKSLASH_CHARACTERS.keys)
+                .forEach {
+                    if (transitionRegex.toRegex().matches(it)) {
+                        newContent +="$fromState $toState ${
+                            if (scanner.BACKSLASH_CHARACTERS.contains(it)) scanner.BACKSLASH_CHARACTERS[it]
+                            else it
+                        }\n"
+                    }
+                }
     }
 
     val regexString = "_regex"

@@ -8,8 +8,12 @@ import java.io.File
 
 const val SCANNER_DFA = "scanner"
 
+val BACKSLASH_CHARACTERS = mutableMapOf("\b" to "\\b", "\t" to "\\t", "\n" to "\\n", "\r" to "\\r")
+
 val ALPHABET =
-        (32..126).map { it.toChar() }.toMutableSet().union(mutableSetOf('\b', '\t', '\n', '\r'))
+        (32..126).map { it.toChar().toString() }
+                .toMutableSet()
+                .union(BACKSLASH_CHARACTERS.values)
 
 val KEYWORDS = setOf(
         "abstract", "boolean", "break", "byte", "case", "catch", "char", "class", "const",
@@ -42,7 +46,12 @@ class Scanner(private val filePath: String, private var dfa: NFA, private val ba
         var lastFinalStateIndex = -1
         var index = 0
         while (index < inputFileString.length) {
-            currentState = dfa.getNextState(currentState, inputFileString[index].toInt())
+            val inputCharacter =
+                    if (BACKSLASH_CHARACTERS.contains(inputFileString[index].toString()))
+                        BACKSLASH_CHARACTERS[inputFileString[index].toString()]
+                    else
+                        inputFileString[index].toString()
+            currentState = dfa.getNextState(currentState, inputCharacter.orEmpty())
             if (currentState.isEmpty()) {
                 if (lastFinalState.isEmpty()) {
                     throw ScannerError()

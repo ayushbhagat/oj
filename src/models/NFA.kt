@@ -18,7 +18,8 @@ data class NFA(
         val states: MutableSet<String>,
         val startState: String,
         val finalStates: MutableSet<String>,
-        val transitionFn: MutableMap<String, MutableMap<Int, MutableSet<String>>>,
+        val transitionFn: MutableMap<String, MutableMap<String, MutableSet<String>>>,
+        val alphabet: Set<String>,
         val type: NFAType? = null,
         val isDfa: Boolean = false) {
     companion object {
@@ -26,10 +27,11 @@ data class NFA(
          * Returns the NFA created from the file at the provided file path and the type.
          * @param filePath The file path that contains the serialization of an NFA. Assumes that
          *      the file name has a ".dfa" extension.
+         * @param alphabet The alphabet over which the NFA will run.
          * @param type The type of the NFA (i.e. what it is meant to recognize).
          * @return The deserialized NFA.
          */
-        fun deserialize(filePath: String, type: NFAType?): NFA {
+        fun deserialize(filePath: String, alphabet: Set<String>, type: NFAType?): NFA {
             // Read the DFA file.
             var lineList: MutableList<String> = mutableListOf()
             val inputStream = File(filePath).inputStream()
@@ -50,15 +52,17 @@ data class NFA(
             lineList[1].split(" ").forEach { finalStates.add(fileName + it) }
 
             // Add the transitions.
-            val transitionFn: MutableMap<String, MutableMap<Int, MutableSet<String>>> =
+            val transitionFn: MutableMap<String, MutableMap<String, MutableSet<String>>> =
                     mutableMapOf()
             lineList.drop(2).forEach {
                 // Instead of using split, separate it by indexOf space so that the regex in the
                 // transition can contain space.
-                val (fromStateNum, toStateNum, transitionString) = it.split(" ")
-                val fromState = fileName + fromStateNum
-                val toState = fileName + toStateNum
-                val transition = transitionString.toInt()
+                val firstSpaceIndex = it.indexOf(" ")
+                val fromState = fileName + it.substring(0, firstSpaceIndex)
+                val secondSpaceIndex = firstSpaceIndex + it.substring(firstSpaceIndex + 1)
+                        .indexOf(" ") + 1
+                val toState = fileName + it.substring(firstSpaceIndex + 1, secondSpaceIndex)
+                val transition = it.substring(secondSpaceIndex + 1)
                 val transitionsTo =
                         if (transitionFn.contains(fromState)) transitionFn[fromState]
                         else mutableMapOf()
@@ -66,17 +70,13 @@ data class NFA(
                         if (transitionsTo?.contains(transition) == true) transitionsTo[transition]
                         else mutableSetOf()
                 toStateSet?.add(toState)
-                if (toStateSet?.isEmpty() == false) {
-                    transitionsTo?.put(transition, toStateSet)
-                }
-                if (transitionsTo?.contains(transition) == true) {
-                    transitionFn[fromState] = transitionsTo
-                }
+                transitionsTo?.put(transition, toStateSet.orEmpty().toMutableSet())
+                transitionFn[fromState] = transitionsTo.orEmpty().toMutableMap()
                 states.add(fromState)
                 states.add(toState)
             }
 
-            return NFA(states, startState, finalStates, transitionFn, type)
+            return NFA(states, startState, finalStates, transitionFn, alphabet, type)
         }
     }
 
@@ -112,12 +112,12 @@ data class NFA(
         val newStates = (states.union(other.states)).toMutableSet()
         newStates.add(newStartState)
         val newFinalStates = (finalStates.union(other.finalStates)).toMutableSet()
-        val newTransitionFn: MutableMap<String, MutableMap<Int, MutableSet<String>>> =
+        val newTransitionFn: MutableMap<String, MutableMap<String, MutableSet<String>>> =
                 HashMap(transitionFn)
         newTransitionFn.putAll(other.transitionFn)
         newTransitionFn[newStartState] =
-                mutableMapOf(-1 to mutableSetOf(startState, other.startState))
-        return NFA(newStates, newStartState, newFinalStates, newTransitionFn)
+                mutableMapOf("" to mutableSetOf(startState, other.startState))
+        return NFA(newStates, newStartState, newFinalStates, newTransitionFn, alphabet)
     }
 
     /**
@@ -128,7 +128,7 @@ data class NFA(
         var newStates: MutableSet<String> = mutableSetOf()
         var newStartState: String
         val newFinalStates: MutableSet<String> = mutableSetOf()
-        val newTransitionFn: MutableMap<String, MutableMap<Int, MutableSet<String>>> =
+        val newTransitionFn: MutableMap<String, MutableMap<String, MutableSet<String>>> =
                 mutableMapOf()
         val startStateEpsilonClosure = getEpsilonClosure(setOf(startState))
         newStartState = startStateEpsilonClosure.joinToString("_")
@@ -142,11 +142,11 @@ data class NFA(
             val currentStates = workList[workList.size - 1]
             val currentStatesString = currentStates.joinToString("_")
             workList.remove(currentStates)
-            for (a in scanner.ALPHABET) {
+            for (a in alphabet) {
                 var newState: MutableSet<String> = mutableSetOf()
                 for (fromState in currentStates) {
                     for ((transition, toStates) in transitionFn[fromState].orEmpty()) {
-                        if (transition == a.toInt()) {
+                        if (transition == a) {
                             newState.addAll(toStates)
                         }
                     }
@@ -160,7 +160,7 @@ data class NFA(
                             if (newTransitionFn.contains(currentStatesString))
                                 newTransitionFn[currentStatesString]
                             else mutableMapOf()
-                    transitionsTo?.put(a.toInt(), mutableSetOf(newStateString))
+                    transitionsTo?.put(a, mutableSetOf(newStateString))
                     newTransitionFn[currentStatesString] = transitionsTo.orEmpty().toMutableMap()
                     if (!newStates.contains(newStateString)) {
                         newStates.add(newStateString)
@@ -172,7 +172,7 @@ data class NFA(
                 }
             }
         }
-        return NFA(newStates, newStartState, newFinalStates, newTransitionFn, null,true)
+        return NFA(newStates, newStartState, newFinalStates, newTransitionFn, alphabet, null,true)
     }
 
     /**
@@ -180,9 +180,9 @@ data class NFA(
      * If reached an error state (i.e. cannot move from the current state on the given character),
      * return an empty string.
      * @param currentState The current state the DFA is in.
-     * @param transition The ASCII value of the character it is supposed to read.
+     * @param transition The character in the alphabet the DFA is supposed to read.
      */
-    fun getNextState(currentState: String, transition: Int): String {
+    fun getNextState(currentState: String, transition: String): String {
         if (!isDfa || !states.contains(currentState)) {
             throw ScannerError()
         }
@@ -209,7 +209,7 @@ data class NFA(
         while (!workList.isEmpty()) {
             val fromState = workList[workList.size - 1]
             workList.remove(fromState)
-            for (toState in transitionFn[fromState]?.get(-1).orEmpty()) {
+            for (toState in transitionFn[fromState]?.get("").orEmpty()) {
                 if (!resultSet.contains(toState)) {
                     resultSet.add(toState)
                     workList.add(toState)

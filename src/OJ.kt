@@ -11,9 +11,9 @@ fun main(args: Array<String>) {
 
     var baseDfas = NFAType
             .values()
-            .map { NFA.deserialize("gen/${it.fileName}.dfa", it) }
+            .map { NFA.deserialize("gen/${it.fileName}.dfa", scanner.ALPHABET, it) }
             .toSet()
-    val scannerDfa = NFA.deserialize("gen/$SCANNER_DFA.dfa", null)
+    val scannerDfa = NFA.deserialize("gen/$SCANNER_DFA.dfa", scanner.ALPHABET, null)
     val scanner = Scanner(args[0], scannerDfa, baseDfas)
     try {
         scanner.tokenize()
