@@ -25,7 +25,7 @@ val KEYWORDS = setOf(
 val BOOLEAN_LITERALS = setOf("true", "false")
 
 val BASE_DFA_NAMES = mapOf(
-        "comment" to TokenType.IDENTIFIER,
+        "comment" to TokenType.COMMENT,
         "identifier" to TokenType.IDENTIFIER,
         "character" to TokenType.CHARACTER,
         "string" to TokenType.STRING,
