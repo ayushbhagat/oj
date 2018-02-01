@@ -21,7 +21,7 @@ fun main(args: Array<String>) {
         println("Scanner Passes")
     } catch (e: ScannerError) {
         println("Scanner Error")
-        exitProcess(42)
+        System.exit(42)
     }
-    exitProcess(0)
+    System.exit(0)
 }

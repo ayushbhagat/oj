@@ -1,5 +1,10 @@
 .PHONY: build convert_dfa_regex_to_string create_scanner_dfa clean
 
+default:
+	make build
+	make convert_dfa_regex_to_string
+	make create_scanner_dfa
+
 build:
 	mkdir -p gen
 	chmod +x joosc
@@ -13,8 +18,3 @@ create_scanner_dfa:
 
 clean:
 	rm -rf gen
-
-default:
-	make build
-	make convert_dfa_regex_to_string
-	make create_scanner_dfa
