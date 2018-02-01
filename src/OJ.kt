@@ -2,6 +2,7 @@ import models.NFA
 import scanner.BASE_DFA_NAMES
 import scanner.SCANNER_DFA
 import scanner.Scanner
+import scanner.ScannerError
 import kotlin.system.exitProcess
 
 fun main(args: Array<String>) {
@@ -18,7 +19,9 @@ fun main(args: Array<String>) {
     try {
         scanner.tokenize()
         println("Scanner Passes")
-    } catch (e: Exception) {
+    } catch (e: ScannerError) {
+        println("Scanner Error")
         exitProcess(42)
     }
+    exitProcess(0)
 }
