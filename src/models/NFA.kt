@@ -3,24 +3,13 @@ package models
 import scanner.ScannerError
 import java.io.File
 
-enum class NFAType(val fileName: String) {
-    COMMENT("comment"),
-    IDENTIFIER("identifier"),
-    CHARACTER("character"),
-    STRING("string"),
-    INTEGER("integer"),
-    OPERATOR("operator"),
-    SEPARATOR("separator"),
-    WHITESPACE("whitespace")
-}
-
 data class NFA(
         val states: MutableSet<String>,
         val startState: String,
         val finalStates: MutableSet<String>,
         val transitionFn: MutableMap<String, MutableMap<String, MutableSet<String>>>,
         val alphabet: Set<String>,
-        val type: NFAType? = null,
+        val name: String = "",
         val isDfa: Boolean = false) {
     companion object {
         /**
@@ -28,10 +17,10 @@ data class NFA(
          * @param filePath The file path that contains the serialization of an NFA. Assumes that
          *      the file name has a ".dfa" extension.
          * @param alphabet The alphabet over which the NFA will run.
-         * @param type The type of the NFA (i.e. what it is meant to recognize).
+         * @param name The name of the NFA.
          * @return The deserialized NFA.
          */
-        fun deserialize(filePath: String, alphabet: Set<String>, type: NFAType?): NFA {
+        fun deserialize(filePath: String, alphabet: Set<String>, name: String): NFA {
             // Read the DFA file.
             var lineList: MutableList<String> = mutableListOf()
             val inputStream = File(filePath).inputStream()
@@ -76,7 +65,7 @@ data class NFA(
                 states.add(toState)
             }
 
-            return NFA(states, startState, finalStates, transitionFn, alphabet, type)
+            return NFA(states, startState, finalStates, transitionFn, alphabet, name)
         }
     }
 
@@ -172,7 +161,7 @@ data class NFA(
                 }
             }
         }
-        return NFA(newStates, newStartState, newFinalStates, newTransitionFn, alphabet, null,true)
+        return NFA(newStates, newStartState, newFinalStates, newTransitionFn, alphabet, "", true)
     }
 
     /**

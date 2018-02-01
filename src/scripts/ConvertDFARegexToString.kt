@@ -1,10 +1,10 @@
 package scripts
 
-import models.NFAType
+import scanner.BASE_DFA_NAMES
 import java.io.File
 
 fun main(args: Array<String>) {
-    NFAType.values().forEach { convertRegexToCharCode("dfa/${it.fileName}_regex.dfa") }
+    BASE_DFA_NAMES.keys.forEach { convertRegexToCharCode("dfa/${it}_regex.dfa") }
 }
 
 fun convertRegexToCharCode(filePath: String) {

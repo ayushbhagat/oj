@@ -1,7 +1,6 @@
 package scanner
 
 import models.NFA
-import models.NFAType
 import models.Token
 import models.TokenType
 import java.io.File
@@ -24,6 +23,16 @@ val KEYWORDS = setOf(
         "try", "void", "volatile", "while")
 
 val BOOLEAN_LITERALS = setOf("true", "false")
+
+val BASE_DFA_NAMES = mapOf(
+        "comment" to TokenType.IDENTIFIER,
+        "identifier" to TokenType.IDENTIFIER,
+        "character" to TokenType.CHARACTER,
+        "string" to TokenType.STRING,
+        "integer" to TokenType.INTEGER,
+        "operator" to TokenType.OPERATOR,
+        "separator" to TokenType.SEPARATOR,
+        "whitespace" to TokenType.WHITESPACE)
 
 class Scanner(private val filePath: String, private var dfa: NFA, private val baseDfas: Set<NFA>) {
     init {
@@ -92,25 +101,20 @@ class Scanner(private val filePath: String, private var dfa: NFA, private val ba
         val states = finalState
                 .substring(finalState.indexOf(SCANNER_DFA) + SCANNER_DFA.length)
                 .split("_")
-        val dfaType = baseDfas
+        val dfaName = baseDfas
                 .find { baseDfa -> states.find { baseDfa.isFinalState(it) } != null }
-                ?.type
-        return when (dfaType) {
-            NFAType.COMMENT -> TokenType.COMMENT
-            NFAType.IDENTIFIER -> {
+                ?.name
+                .orEmpty()
+        return when {
+            BASE_DFA_NAMES[dfaName] == TokenType.IDENTIFIER -> {
                 when {
                     KEYWORDS.contains(currentLexeme) -> TokenType.KEYWORD
                     BOOLEAN_LITERALS.contains(currentLexeme) -> TokenType.BOOLEAN
-                    currentLexeme.equals("null") -> TokenType.NULL
+                    currentLexeme == "null" -> TokenType.NULL
                     else -> TokenType.IDENTIFIER
                 }
             }
-            NFAType.CHARACTER -> TokenType.CHARACTER
-            NFAType.STRING -> TokenType.STRING
-            NFAType.INTEGER -> TokenType.INTEGER
-            NFAType.OPERATOR -> TokenType.OPERATOR
-            NFAType.SEPARATOR -> TokenType.SEPARATOR
-            NFAType.WHITESPACE -> TokenType.WHITESPACE
+            BASE_DFA_NAMES[dfaName] != null -> BASE_DFA_NAMES[dfaName]!!
             else -> throw ScannerError()
         }
     }
