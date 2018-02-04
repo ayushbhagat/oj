@@ -36,6 +36,8 @@ dependencies {
     testCompile "org.jetbrains.kotlin:kotlin-test-junit:$kotlin_version"
     testCompile 'org.junit.platform:junit-platform-runner:1.1.0-M2'
     testCompile 'org.jetbrains.spek:spek-api:1.1.5'
+    compile group: 'org.jetbrains.spek', name: 'spek-subject-extension', version: '1.1.5'
+
 
     testRuntime 'org.junit.platform:junit-platform-launcher:1.1.0-M2'
     testRuntime 'org.jetbrains.spek:spek-junit-platform-engine:1.1.5'

@@ -3,7 +3,6 @@ package oj.scanner
 import oj.models.NFA
 import oj.models.Token
 import oj.models.TokenType
-import java.io.File
 
 const val SCANNER_DFA = "scanner"
 
@@ -34,7 +33,7 @@ val BASE_DFA_NAMES = mapOf(
         "separator" to TokenType.SEPARATOR,
         "whitespace" to TokenType.WHITESPACE)
 
-class Scanner(private val filePath: String, private var dfa: NFA, private val baseDfas: Set<NFA>) {
+class Scanner(private var dfa: NFA, private val baseDfas: Set<NFA>) {
     init {
         if (!dfa.isDfa) {
             dfa = dfa.toDFA()
@@ -45,30 +44,27 @@ class Scanner(private val filePath: String, private var dfa: NFA, private val ba
      * Return a tokenization of the input program.
      * @return The list of tokens that represents the input program.
      */
-    fun tokenize(): List<Token> {
-        val inputStream = File(filePath).inputStream()
-        var inputFileString = inputStream.bufferedReader().use { it.readText() }
+    fun tokenize(code: String): List<Token> {
         val tokens: MutableList<Token> = mutableListOf()
         var currentState = dfa.startState
         var lexemeStartIndex = 0
         var lastFinalState = ""
         var lastFinalStateIndex = -1
         var index = 0
-        while (index < inputFileString.length) {
+        while (index < code.length) {
             val inputCharacter =
-                    if (BACKSLASH_CHARACTERS.contains(inputFileString[index].toString()))
-                        BACKSLASH_CHARACTERS[inputFileString[index].toString()]
+                    if (BACKSLASH_CHARACTERS.contains(code[index].toString()))
+                        BACKSLASH_CHARACTERS[code[index].toString()]
                     else
-                        inputFileString[index].toString()
+                        code[index].toString()
             currentState = dfa.getNextState(currentState, inputCharacter.orEmpty())
             if (currentState.isEmpty()) {
                 if (lastFinalState.isEmpty()) {
                     throw ScannerError()
                 } else {
                     val lexeme =
-                            inputFileString.substring(lexemeStartIndex, lastFinalStateIndex + 1)
+                            code.substring(lexemeStartIndex, lastFinalStateIndex + 1)
                     tokens.add(Token(getTokenType(lastFinalState, lexeme), lexeme))
-                    println("${tokens[tokens.size - 1].type} ${tokens[tokens.size - 1].lexeme}")
                     index = lastFinalStateIndex
                     currentState = dfa.startState
                     lexemeStartIndex = lastFinalStateIndex + 1
@@ -84,7 +80,7 @@ class Scanner(private val filePath: String, private var dfa: NFA, private val ba
             index++
         }
         if (dfa.isFinalState(currentState)) {
-            val lexeme = inputFileString.substring(lexemeStartIndex, lastFinalStateIndex + 1)
+            val lexeme = code.substring(lexemeStartIndex, lastFinalStateIndex + 1)
             tokens.add(Token(getTokenType(lastFinalState, lexeme), lexeme))
         } else {
             throw ScannerError()
