@@ -1,8 +1,8 @@
-package scanner
+package oj.scanner
 
-import models.NFA
-import models.Token
-import models.TokenType
+import oj.models.NFA
+import oj.models.Token
+import oj.models.TokenType
 import java.io.File
 
 const val SCANNER_DFA = "scanner"
