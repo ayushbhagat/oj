@@ -1,9 +1,7 @@
 package oj.scanner
 
 import oj.models.NFA
-import oj.models.Token
 import oj.models.TokenType
-import org.jetbrains.spek.api.Spek
 import org.jetbrains.spek.api.dsl.describe
 import org.jetbrains.spek.api.dsl.it
 import org.jetbrains.spek.subject.SubjectSpek
@@ -68,12 +66,14 @@ object SimpleCalculatorSpec: SubjectSpek<Scanner>({
         }
 
         it("can tokenize /* */ comments that are multi-line") {
-            val comment = """/* Salutations, compadre
+            val comment = """
+                |/* Salutations, compadre
                 |I come bearing good news
                 |You have a brand new child!
                 |I bought it for only $12.99 at WalMart!
                 |Huzzah!
-            |*/""".trimMargin()
+                |*/
+            """.trimMargin()
 
             val tokens = subject.tokenize(comment)
             assertEquals(1, tokens.size)
@@ -82,11 +82,13 @@ object SimpleCalculatorSpec: SubjectSpek<Scanner>({
         }
 
         it("can tokenize /* */ comments that contain other comments") {
-            val comment = """/* Salutations, compadre
+            val comment = """
+                |/* Salutations, compadre
                 |// You have a new ring
                 |/* What am I doing? // Can't close this multiline comment yet
                 |Huzzah!
-            |*/""".trimMargin()
+                |*/
+            """.trimMargin()
 
             val tokens = subject.tokenize(comment)
             assertEquals(1, tokens.size)
@@ -116,6 +118,30 @@ object SimpleCalculatorSpec: SubjectSpek<Scanner>({
 
             val firstComment = commentLines.slice(IntRange(0, 2)).joinToString("\n")
             assertEquals(firstComment, commentToken.lexeme)
+        }
+
+        it("should parse javadoc comments as regular comments") {
+            val comment = """
+                |/**
+                | * @description This is the most amazing method you'll ever execute in your life
+                | *
+                | * @param {Logger} logger - A goddamn logger
+                | */
+            """.trimMargin()
+
+            val code = comment + "\n" + """
+                |public void doSomethingAmazing(Logger logger) {
+                |  System.out.println("Boom!");
+                |  System.out.println("Has your live been changed yet");
+                |}
+            """.trimIndent()
+
+            val tokens = subject.tokenize(code)
+            val nonWhitespaceTokens = tokens.filter({ it.type != TokenType.WHITESPACE })
+
+            assertTrue(nonWhitespaceTokens.isNotEmpty())
+            assertEquals(TokenType.COMMENT, nonWhitespaceTokens[0].type)
+            assertEquals(comment, nonWhitespaceTokens[0].lexeme)
         }
 
     }
@@ -201,7 +227,7 @@ object SimpleCalculatorSpec: SubjectSpek<Scanner>({
             assertEquals(identifierName, tokens[0].lexeme)
         }
 
-        it( "can tokenize identifiers containign _ in the middle") {
+        it( "can tokenize identifiers containing a _ in the middle") {
             val identifierName = "sssssssssssssss_im_a_snek_sssss"
             val tokens = subject.tokenize(identifierName)
 
@@ -269,10 +295,12 @@ object SimpleCalculatorSpec: SubjectSpek<Scanner>({
 
         describe("Characters") {
 
-            it("should tokenize all ascii letters") {
-                val lowerCaseLetters = IntRange('a'.toInt(), 'z'.toInt()).map({ "'" + it.toChar() + "'" })
-                val upperCaseLetters = lowerCaseLetters.map({ it.toUpperCase() })
-                val letters = lowerCaseLetters + upperCaseLetters
+            it("should tokenize all ASCII letters") {
+                val letters = (
+                    IntRange('a'.toInt(), 'z'.toInt()) +
+                    IntRange('A'.toInt(), 'Z'.toInt())
+                )
+                    .map({ "'${it.toChar()}'" })
 
                 val code = letters.joinToString("")
 
@@ -284,7 +312,7 @@ object SimpleCalculatorSpec: SubjectSpek<Scanner>({
                 assertEquals(letters, tokens.map({ it.lexeme }))
             }
 
-            it("should tokenize all special characters") {
+            it("should tokenize all ASCII non-letters") {
                 val specialChars = (
                     IntRange(' '.toInt(), '@'.toInt()) +
                     IntRange('['.toInt(), '`'.toInt()) +
@@ -394,7 +422,7 @@ object SimpleCalculatorSpec: SubjectSpek<Scanner>({
                 assertEquals(code, tokens[0].lexeme)
             }
 
-            it("should reject unknown special characters") {
+            it("should reject unknown escape characters") {
                 val code = """'\h'"""
 
                 assertFailsWith(ScannerError::class) {
@@ -404,15 +432,369 @@ object SimpleCalculatorSpec: SubjectSpek<Scanner>({
 
         }
 
-        describe("String") {}
+        describe("String") {
 
-        describe("Integer") {}
+            it("should tokenize strings with ASCII letters") {
+                val letters = (
+                    IntRange('a'.toInt(), 'z'.toInt()) +
+                    IntRange('A'.toInt(), 'Z'.toInt())
+                )
+                    .map({ it.toChar() })
 
-        describe("Null") {}
+                val string = "\"" + letters.joinToString("") + "\""
+                val tokens = subject.tokenize("String x = $string;")
+                val nonWhitespaceTokens = tokens.filter({ it.type != TokenType.WHITESPACE })
+
+                assertEquals(5, nonWhitespaceTokens.size)
+                assertEquals(TokenType.STRING, nonWhitespaceTokens[3].type)
+                assertEquals(string, nonWhitespaceTokens[3].lexeme)
+            }
+
+            it("should tokenize strings with ASCII non-letters") {
+                val specialChars = (
+                    IntRange(' '.toInt(), '@'.toInt()) +
+                    IntRange('['.toInt(), '`'.toInt()) +
+                    IntRange('{'.toInt(), '~'.toInt())
+                )
+                    .map({ it.toChar() })
+                    .filter({ it != '\'' && it != '\\' && it != '\"'})
+
+                val string = "\"" + specialChars.joinToString("") + "\""
+                val code = "String x = $string;"
+                val tokens = subject.tokenize(code)
+                val nonWhitespaceTokens = tokens.filter({ it.type != TokenType.WHITESPACE })
+
+                assertEquals(5, nonWhitespaceTokens.size)
+                assertEquals(TokenType.STRING, nonWhitespaceTokens[3].type)
+                assertEquals(string, nonWhitespaceTokens[3].lexeme)
+            }
+
+            it("should tokenize strings with escape characters") {
+                val string = """"Hi! \n \b\n bye! \t\f\r\" \' good bye""""
+                val tokens = subject.tokenize("String ayush = $string;")
+                val nonWhitespaceTokens = tokens.filter({ it.type != TokenType.WHITESPACE })
+
+                assertEquals(5, nonWhitespaceTokens.size)
+                assertEquals(TokenType.STRING, nonWhitespaceTokens[3].type)
+                assertEquals(string, nonWhitespaceTokens[3].lexeme)
+            }
+
+            it("should reject strings with unknown escape characters") {
+                val string = """"hurrrrrr \z\g""""
+
+                assertFailsWith(ScannerError::class) {
+                    subject.tokenize("String ayush = $string")
+                }
+            }
+
+            it("should tokenize \"\"") {
+                val string = "\"\""
+                val tokens = subject.tokenize("\"a\" + $string + \"c\"")
+                val nonWhitespaceTokens = tokens.filter({ it.type != TokenType.WHITESPACE })
+
+                assertEquals(5, nonWhitespaceTokens.size)
+                assertEquals(TokenType.STRING, nonWhitespaceTokens[2].type)
+                assertEquals(string, nonWhitespaceTokens[2].lexeme)
+            }
+
+            it("should reject multi-line strings") {
+                val string = "\"Hi, guys!\n My name is Raman\""
+
+                assertFailsWith(ScannerError::class) {
+                    subject.tokenize("\"a\" + $string + \"c\"")
+                }
+            }
+
+        }
+
+        describe("Integer") {
+
+            it("should tokenize the number 0") {
+                val integer = "0"
+                val tokens = subject.tokenize("int x = $integer;")
+                val nonWhitespaceTokens = tokens.filter({ it.type != TokenType.WHITESPACE })
+
+                assertEquals(5, nonWhitespaceTokens.size)
+                assertEquals(integer, nonWhitespaceTokens[3].lexeme)
+                assertEquals(TokenType.INTEGER, nonWhitespaceTokens[3].type)
+            }
+
+            it("should tokenize oct literals as two numbers") {
+                val integer = "0123"
+                val tokens = subject.tokenize("int horse = $integer * 2;")
+                val nonWhitespaceTokens = tokens.filter({ it.type != TokenType.WHITESPACE })
+
+                assertEquals(8, nonWhitespaceTokens.size)
+
+                assertEquals("0", nonWhitespaceTokens[3].lexeme)
+                assertEquals(TokenType.INTEGER, nonWhitespaceTokens[3].type)
+
+                assertEquals("123", nonWhitespaceTokens[4].lexeme)
+                assertEquals(TokenType.INTEGER, nonWhitespaceTokens[4].type)
+            }
+
+            it("should tokenize negative integers as two tokens") {
+                val integer = "12345"
+                val tokens = subject.tokenize("2 * -$integer")
+                val nonWhitespaceTokens = tokens.filter({ it.type != TokenType.WHITESPACE })
+
+                assertEquals(4, nonWhitespaceTokens.size)
+                assertEquals(integer, nonWhitespaceTokens[3].lexeme)
+                assertEquals(TokenType.INTEGER, nonWhitespaceTokens[3].type)
+            }
+
+            it("should tokenize integer literals >= 2^31") {
+                val integer = "214748364800000"
+                val tokens = subject.tokenize("int ab = 2 * ($integer + 1)")
+                val nonWhitespaceTokens = tokens.filter({ it.type != TokenType.WHITESPACE })
+
+                assertEquals(10, nonWhitespaceTokens.size)
+                assertEquals(integer, nonWhitespaceTokens[6].lexeme)
+                assertEquals(TokenType.INTEGER, nonWhitespaceTokens[6].type)
+            }
+
+        }
+
+        describe("Null") {
+
+            it("should tokenize null") {
+                val code = "x = null"
+                val tokens = subject.tokenize(code)
+                val nonWhitespaceTokens = tokens.filter({ it.type != TokenType.WHITESPACE })
+
+                assertEquals(3, nonWhitespaceTokens.size)
+
+                val nullToken = nonWhitespaceTokens[2]
+
+                assertEquals(TokenType.NULL, nullToken.type)
+                assertEquals("null", nullToken.lexeme)
+            }
+        }
     }
 
-    describe("Operators") {}
+    describe("Operators") {
+        it("should tokenize arithmetic operators") {
+            val code = "-2 * x + 87 % x - (x/7)"
+            val tokens = subject.tokenize(code)
+            val nonWhitespaceTokens = tokens.filter({ it.type != TokenType.WHITESPACE })
 
-    describe("Separators") {}
+            val assertIsOp = { i: Int, lexeme: String ->
+                assertEquals(TokenType.OPERATOR, nonWhitespaceTokens[i].type)
+                assertEquals(lexeme, nonWhitespaceTokens[i].lexeme)
+            }
+
+            assertIsOp(0, "-")
+            assertIsOp(2, "*")
+            assertIsOp(4, "+")
+            assertIsOp(6, "%")
+            assertIsOp(8, "-")
+            assertIsOp(11, "/")
+        }
+
+        it("should tokenize comparison operators") {
+            val code = "return (x<87) && (x>42) && (x<=86) && (x>=43) && (x==51) && (x!=52) ;"
+            val tokens = subject.tokenize(code)
+            val nonWhitespaceTokens = tokens.filter({ it.type != TokenType.WHITESPACE })
+
+            val assertIsOp = { i: Int, lexeme: String ->
+                assertEquals(TokenType.OPERATOR, nonWhitespaceTokens[i].type)
+                assertEquals(lexeme, nonWhitespaceTokens[i].lexeme)
+            }
+
+            assertIsOp(3, "<")
+            assertIsOp(6, "&&")
+            assertIsOp(9, ">")
+            assertIsOp(12, "&&")
+            assertIsOp(15, "<=")
+            assertIsOp(18, "&&")
+            assertIsOp(21, ">=")
+            assertIsOp(24, "&&")
+            assertIsOp(27, "==")
+            assertIsOp(30, "&&")
+            assertIsOp(33, "!=")
+        }
+
+        it("should tokenize eager boolean operators") {
+            val code = "return (x & true) | !x;"
+            val tokens = subject.tokenize(code)
+            val nonWhitespaceTokens = tokens.filter({ it.type != TokenType.WHITESPACE })
+
+            val assertIsOp = { i: Int, lexeme: String ->
+                assertEquals(TokenType.OPERATOR, nonWhitespaceTokens[i].type)
+                assertEquals(lexeme, nonWhitespaceTokens[i].lexeme)
+            }
+
+            assertIsOp(3, "&")
+            assertIsOp(6, "|")
+            assertIsOp(7, "!")
+        }
+
+        it("should tokenize lazy boolean operators") {
+            val code = "return (x && true) || x;"
+            val tokens = subject.tokenize(code)
+            val nonWhitespaceTokens = tokens.filter({ it.type != TokenType.WHITESPACE })
+
+            val assertIsOp = { i: Int, lexeme: String ->
+                assertEquals(TokenType.OPERATOR, nonWhitespaceTokens[i].type)
+                assertEquals(lexeme, nonWhitespaceTokens[i].lexeme)
+            }
+
+            assertIsOp(3, "&&")
+            assertIsOp(6, "||")
+        }
+
+        it("should tokenize '--' as an operator") {
+            val code = "a--b"
+            val tokens = subject.tokenize(code)
+
+            assertEquals(3, tokens.size)
+            assertEquals(TokenType.OPERATOR, tokens[1].type)
+            assertEquals("--", tokens[1].lexeme)
+        }
+    }
+
+    describe("Separators") {
+        it("should tokenize () as separators") {
+            val code = "1 + (2 + test - (10 - 5)) + (2)"
+            val tokens = subject.tokenize(code)
+            val nonWhitespaceTokens = tokens.filter({ it.type != TokenType.WHITESPACE })
+
+            assertEquals(17, nonWhitespaceTokens.size)
+
+            val assertSeparator = { i: Int, lexeme: String ->
+                assertEquals(TokenType.SEPARATOR, nonWhitespaceTokens[i].type)
+                assertEquals(lexeme, nonWhitespaceTokens[i].lexeme)
+            }
+
+            assertSeparator(2, "(")
+            assertSeparator(7, "(")
+            assertSeparator(11, ")")
+            assertSeparator(12, ")")
+            assertSeparator(14, "(")
+            assertSeparator(16, ")")
+        }
+
+        it("should tokenize {} as separators") {
+            val code = """
+                |public static void main() {
+                |  if (x == 10) {
+                |    System.out.println(10);
+                |  }
+                |}
+            """.trimMargin()
+            val tokens = subject.tokenize(code)
+            val nonWhitespaceTokens = tokens.filter({ it.type != TokenType.WHITESPACE })
+
+            assertEquals(25, nonWhitespaceTokens.size)
+
+            val assertSeparator = { i: Int, lexeme: String ->
+                assertEquals(TokenType.SEPARATOR, nonWhitespaceTokens[i].type)
+                assertEquals(lexeme, nonWhitespaceTokens[i].lexeme)
+            }
+
+            assertSeparator(6, "{")
+            assertSeparator(13, "{")
+            assertSeparator(23, "}")
+            assertSeparator(24, "}")
+        }
+
+        it("should tokenize [] as separators") {
+            val code = """
+                |String[] args[], a = new String[20][getSize()], "hi";
+            """.trimMargin()
+            val tokens = subject.tokenize(code)
+            val nonWhitespaceTokens = tokens.filter({ it.type != TokenType.WHITESPACE })
+
+            assertEquals(22, nonWhitespaceTokens.size)
+
+            val assertSeparator = { i: Int, lexeme: String ->
+                assertEquals(TokenType.SEPARATOR, nonWhitespaceTokens[i].type)
+                assertEquals(lexeme, nonWhitespaceTokens[i].lexeme)
+            }
+
+            assertSeparator(1, "[")
+            assertSeparator(2, "]")
+            assertSeparator(4, "[")
+            assertSeparator(5, "]")
+            assertSeparator(11, "[")
+            assertSeparator(13, "]")
+            assertSeparator(14, "[")
+            assertSeparator(18, "]")
+        }
+
+        it("should tokenize , as a separator") {
+            val code = """
+                |final String x = (false, callHorse("come,", "black beauty", "my darling steed"));
+            """.trimMargin()
+            val tokens = subject.tokenize(code)
+            val nonWhitespaceTokens = tokens.filter({ it.type != TokenType.WHITESPACE })
+
+            assertEquals(17, nonWhitespaceTokens.size)
+
+            val assertSeparator = { i: Int, lexeme: String ->
+                assertEquals(TokenType.SEPARATOR, nonWhitespaceTokens[i].type)
+                assertEquals(lexeme, nonWhitespaceTokens[i].lexeme)
+            }
+
+            assertSeparator(6, ",")
+            assertSeparator(10, ",")
+            assertSeparator(12, ",")
+
+            assertEquals(
+                3,
+                nonWhitespaceTokens
+                    .filter({ it.type == TokenType.SEPARATOR })
+                    .filter({ it.lexeme == ","})
+                    .size
+            )
+        }
+
+        it("should tokenize . as a separator") {
+            val code = """
+                |public static void main(String[] args) {
+                |   if (Logger.out != null) {
+                |       Logger.out.stdout.println(getInstance().getHorse().neigh().toString());
+                |   }
+                |}
+            """.trimMargin()
+            val tokens = subject.tokenize(code)
+            val nonWhitespaceTokens = tokens.filter({ it.type != TokenType.WHITESPACE })
+
+            assertEquals(47, nonWhitespaceTokens.size)
+
+            val assertSeparator = { i: Int, lexeme: String ->
+                assertEquals(TokenType.SEPARATOR, nonWhitespaceTokens[i].type)
+                assertEquals(lexeme, nonWhitespaceTokens[i].lexeme)
+            }
+
+            assertSeparator(14, ".")
+            assertSeparator(21, ".")
+            assertSeparator(23, ".")
+            assertSeparator(25, ".")
+            assertSeparator(31, ".")
+            assertSeparator(35, ".")
+            assertSeparator(39, ".")
+        }
+
+        it("should tokenize ; as a separator") {
+            val code = """
+                |final String hi = "hi";
+                |final String bye = "bye";
+                |return hi + bye;
+            """.trimMargin()
+            val tokens = subject.tokenize(code)
+            val nonWhitespaceTokens = tokens.filter({ it.type != TokenType.WHITESPACE })
+
+            assertEquals(17, nonWhitespaceTokens.size)
+
+            val assertSeparator = { i: Int, lexeme: String ->
+                assertEquals(TokenType.SEPARATOR, nonWhitespaceTokens[i].type)
+                assertEquals(lexeme, nonWhitespaceTokens[i].lexeme)
+            }
+
+            assertSeparator(5, ";")
+            assertSeparator(11, ";")
+            assertSeparator(16, ";")
+        }
+    }
 })
-
