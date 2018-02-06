@@ -16,9 +16,18 @@ object SimpleCalculatorSpec: SubjectSpek<Scanner>({
     subject {
         var baseDfas = BASE_DFA_NAMES
                 .keys
-                .map { NFA.deserialize("gen/$it.dfa", oj.scanner.ALPHABET, it) }
+                .map {
+                    NFA.deserialize(
+                            "gen/$it.dfa",
+                            NFA.EmptyStateDataHelper(),
+                            oj.scanner.ALPHABET,
+                            it) }
                 .toSet()
-        val scannerDfa = NFA.deserialize("gen/$SCANNER_DFA.dfa", oj.scanner.ALPHABET, "")
+        val scannerDfa = NFA.deserialize(
+                "gen/$SCANNER_DFA.dfa",
+                NFA.EmptyStateDataHelper(),
+                oj.scanner.ALPHABET,
+                "")
         Scanner(scannerDfa, baseDfas)
     }
 

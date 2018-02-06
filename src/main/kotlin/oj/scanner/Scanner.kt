@@ -42,13 +42,14 @@ class Scanner(private var dfa: NFA, private val baseDfas: Set<NFA>) {
 
     /**
      * Return a tokenization of the input program.
+     * @param code The code to tokenize.
      * @return The list of tokens that represents the input program.
      */
     fun tokenize(code: String): List<Token> {
         val tokens: MutableList<Token> = mutableListOf()
-        var currentState = dfa.startState
+        var currentState: NFA.State? = dfa.startState
         var lexemeStartIndex = 0
-        var lastFinalState = ""
+        var lastFinalState: NFA.State? = null
         var lastFinalStateIndex = -1
         var index = 0
         while (index < code.length) {
@@ -58,8 +59,8 @@ class Scanner(private var dfa: NFA, private val baseDfas: Set<NFA>) {
                     else
                         code[index].toString()
             currentState = dfa.getNextState(currentState, inputCharacter.orEmpty())
-            if (currentState.isEmpty()) {
-                if (lastFinalState.isEmpty()) {
+            if (currentState == null) {
+                if (lastFinalState == null) {
                     throw ScannerError()
                 } else {
                     val lexeme =
@@ -68,7 +69,7 @@ class Scanner(private var dfa: NFA, private val baseDfas: Set<NFA>) {
                     index = lastFinalStateIndex
                     currentState = dfa.startState
                     lexemeStartIndex = lastFinalStateIndex + 1
-                    lastFinalState = ""
+                    lastFinalState = null
                     lastFinalStateIndex = -1
                 }
             } else {
@@ -91,14 +92,24 @@ class Scanner(private var dfa: NFA, private val baseDfas: Set<NFA>) {
     /**
      * Return the token type.
      * @param finalState The final state to use to determine the token type just read.
-     * @param currentLexeme The lexeme that is also used to determin the token type.
+     * @param currentLexeme The lexeme that is also used to determine the token type.
      */
-    private fun getTokenType(finalState: String, currentLexeme: String): TokenType {
-        val states = finalState
-                .substring(finalState.indexOf(SCANNER_DFA) + SCANNER_DFA.length)
+    private fun getTokenType(finalState: NFA.State?, currentLexeme: String): TokenType {
+        if (finalState == null) {
+            throw ScannerError()
+        }
+        // Note that this is kind of a hack because it assumes that state names are joined using
+        // '_'.
+        val stateNames = finalState
+                .name
+                .substring(finalState.name.indexOf(SCANNER_DFA) + SCANNER_DFA.length)
                 .split("_")
         val dfaName = baseDfas
-                .find { baseDfa -> states.find { baseDfa.isFinalState(it) } != null }
+                .find { baseDfa ->
+                    stateNames.find {
+                        baseDfa.isFinalState(NFA.State(it, NFA.EmptyStateData()))
+                    } != null
+                }
                 ?.name
                 .orEmpty()
         return when {

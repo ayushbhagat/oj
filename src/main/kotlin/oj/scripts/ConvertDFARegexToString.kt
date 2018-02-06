@@ -8,12 +8,12 @@ fun main(args: Array<String>) {
 }
 
 fun convertRegexToCharCode(filePath: String) {
-    var lineList: MutableList<String> = mutableListOf()
-    val inputStream = File(filePath).inputStream()
-    inputStream.bufferedReader().useLines { lines -> lines.forEach { lineList.add(it) }}
+    val lines = File(filePath).readLines()
 
-    var newContent = "${lineList[0]}\n${lineList[1]}\n"
-    lineList.drop(2).forEach {
+    val numStates = lines[0].toInt()
+    var newContent = lines.subList(0, numStates + 1).joinToString("\n")
+    newContent += "\n${lines[numStates + 1]}\n${lines[numStates + 2]}\n"
+    lines.drop(numStates + 3).forEach {
         val firstSpaceIndex = it.indexOf(" ")
         val fromState = it.substring(0, firstSpaceIndex)
         val secondSpaceIndex = firstSpaceIndex + it.substring(firstSpaceIndex + 1)

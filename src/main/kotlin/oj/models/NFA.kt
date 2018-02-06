@@ -4,10 +4,11 @@ import oj.scanner.ScannerError
 import java.io.File
 
 data class NFA(
-        val states: MutableSet<String>,
-        val startState: String,
-        val finalStates: MutableSet<String>,
-        val transitionFn: MutableMap<String, MutableMap<String, MutableSet<String>>>,
+        val states: Set<State>,
+        val startState: State,
+        val finalStates: Set<State>,
+        val transitionFn: Map<State, Map<String, Set<State>>>,
+        val stateDataHelper: StateDataHelper,
         val alphabet: Set<String>,
         val name: String = "",
         val isDfa: Boolean = false) {
@@ -17,72 +18,95 @@ data class NFA(
          * @param filePath The file path that contains the serialization of an NFA. Assumes that
          *      the file name has a ".dfa" extension.
          * @param alphabet The alphabet over which the NFA will run.
+         * @param stateDataHelper The helper class that knows how to serialize the state data.
          * @param name The name of the NFA.
          * @return The deserialized NFA.
          */
-        fun deserialize(filePath: String, alphabet: Set<String>, name: String): NFA {
+        fun deserialize(
+                filePath: String,
+                stateDataHelper: StateDataHelper,
+                alphabet: Set<String>,
+                name: String): NFA {
             // Read the DFA file.
-            var lineList: MutableList<String> = mutableListOf()
-            val inputStream = File(filePath).inputStream()
-            inputStream.bufferedReader().useLines { lines -> lines.forEach { lineList.add(it) }}
+            val lines = File(filePath).readLines()
 
-            // Add states on the fly.
-            val states: MutableSet<String> = mutableSetOf()
+            // First line is the number of states.
+            val numStates = lines[0].toInt()
 
-            // First line is the start state.
+            // Next number of states line is the states with their data.
             val fileName = filePath.substring(
                     filePath.lastIndexOf("/") + 1,
                     filePath.lastIndexOf(".dfa"))
-            val startState = fileName + lineList[0]
-            states.add(startState)
+            val statesByName: MutableMap<String, State> = mutableMapOf()
+            val states = lines.subList(1, numStates + 1).map {
+                val firstSpaceIndex =
+                        if (it.indexOf(" ") >= 0) it.indexOf(" ") else it.length
+                val stateName = fileName + it.substring(0, firstSpaceIndex)
+                val stateData = stateDataHelper.deserialize(
+                        if (firstSpaceIndex < it.length) it.substring(firstSpaceIndex + 1)
+                        else "")
+                val state = State(stateName, stateData)
+                statesByName[stateName] = state
+                state
+            }.toSet()
 
-            // Second line contains a list of states.
-            val finalStates: MutableSet<String> = mutableSetOf()
-            lineList[1].split(" ").forEach { finalStates.add(fileName + it) }
+            // Next line is the start state.
+            val startState = statesByName[fileName + lines[numStates + 1]]!!
+
+            // Next line contains a list of final states.
+            val finalStates = lines[numStates + 2]
+                    .split(" ")
+                    .map { statesByName[fileName + it]!! }
+                    .toSet()
 
             // Add the transitions.
-            val transitionFn: MutableMap<String, MutableMap<String, MutableSet<String>>> =
+            val transitionFn: MutableMap<State, MutableMap<String, MutableSet<State>>> =
                     mutableMapOf()
-            lineList.drop(2).forEach {
+            lines.drop(numStates + 3).forEach {
                 // Instead of using split, separate it by indexOf space so that the regex in the
                 // transition can contain space.
                 val firstSpaceIndex = it.indexOf(" ")
-                val fromState = fileName + it.substring(0, firstSpaceIndex)
                 val secondSpaceIndex = firstSpaceIndex + it.substring(firstSpaceIndex + 1)
                         .indexOf(" ") + 1
-                val toState = fileName + it.substring(firstSpaceIndex + 1, secondSpaceIndex)
+                val fromState = statesByName[fileName + it.substring(0, firstSpaceIndex)]!!
+                val toState = statesByName[fileName + it.substring(firstSpaceIndex + 1,
+                        secondSpaceIndex)]!!
                 val transition = it.substring(secondSpaceIndex + 1)
-                val transitionsTo =
-                        if (transitionFn.contains(fromState)) transitionFn[fromState]
-                        else mutableMapOf()
-                val toStateSet =
-                        if (transitionsTo?.contains(transition) == true) transitionsTo[transition]
-                        else mutableSetOf()
-                toStateSet?.add(toState)
-                transitionsTo?.put(transition, toStateSet.orEmpty().toMutableSet())
-                transitionFn[fromState] = transitionsTo.orEmpty().toMutableMap()
-                states.add(fromState)
-                states.add(toState)
+                val transitionsTo = transitionFn.getOrDefault(fromState, mutableMapOf())
+                val toStateSet = transitionsTo.getOrDefault(transition, mutableSetOf())
+                toStateSet.add(toState)
+                transitionsTo[transition] = toStateSet.toMutableSet()
+                transitionFn[fromState] = transitionsTo.toMutableMap()
             }
 
-            return NFA(states, startState, finalStates, transitionFn, alphabet, name)
+            return NFA(
+                    states,
+                    startState,
+                    finalStates,
+                    transitionFn,
+                    stateDataHelper,
+                    alphabet,
+                    name)
         }
     }
 
     /**
      * Serialize the NFA to the provided file path.
      * @param filePath The file path to write the serialization of NFA to.
+     * @param stateDataHelper The helper class that knows how to serialize the state data.
      * @return The serialized string.
      */
-    fun serialize(filePath: String): String {
-        var serialization = "$startState\n"
-        serialization += "${finalStates.joinToString(" ")}\n"
-        serialization += ""
+    fun serialize(filePath: String, stateDataHelper: StateDataHelper): String {
+        var serialization = "${states.size}\n"
+        serialization +=
+                states.map{ "${it.name} ${stateDataHelper.serialize(it.data)}" }.joinToString("\n")
+        serialization += "\n${startState.name}\n"
+        serialization += "${finalStates.map { it.name } .joinToString(" ")}\n"
         var transitionsString = ""
         transitionFn.keys.forEach { fromState ->
             transitionFn[fromState]?.keys?.forEach { transition ->
                 transitionFn[fromState]?.get(transition)?.forEach { toState ->
-                    transitionsString += "$fromState $toState $transition\n"
+                    transitionsString += "${fromState.name} ${toState.name} $transition\n"
                 }
             }
         }
@@ -97,16 +121,22 @@ data class NFA(
      * @return The NFA is the result of the OR.
      */
     fun or(other: NFA): NFA {
-        val newStartState = "${startState}_${other.startState}"
+        val newStartState = startState.combine(stateDataHelper, other.startState)
         val newStates = (states.union(other.states)).toMutableSet()
         newStates.add(newStartState)
         val newFinalStates = (finalStates.union(other.finalStates)).toMutableSet()
-        val newTransitionFn: MutableMap<String, MutableMap<String, MutableSet<String>>> =
+        val newTransitionFn: MutableMap<State, Map<String, Set<State>>> =
                 HashMap(transitionFn)
         newTransitionFn.putAll(other.transitionFn)
         newTransitionFn[newStartState] =
                 mutableMapOf("" to mutableSetOf(startState, other.startState))
-        return NFA(newStates, newStartState, newFinalStates, newTransitionFn, alphabet)
+        return NFA(
+                newStates,
+                newStartState,
+                newFinalStates,
+                newTransitionFn,
+                stateDataHelper,
+                alphabet)
     }
 
     /**
@@ -114,25 +144,29 @@ data class NFA(
      * @return The corresponding DFA.
      */
     fun toDFA(): NFA {
-        var newStates: MutableSet<String> = mutableSetOf()
-        var newStartState: String
-        val newFinalStates: MutableSet<String> = mutableSetOf()
-        val newTransitionFn: MutableMap<String, MutableMap<String, MutableSet<String>>> =
+        var newStates: MutableSet<State> = mutableSetOf()
+        var newStartState: State
+        val newFinalStates: MutableSet<State> = mutableSetOf()
+        val newTransitionFn: MutableMap<State, MutableMap<String, MutableSet<State>>> =
                 mutableMapOf()
-        val startStateEpsilonClosure = getEpsilonClosure(setOf(startState))
-        newStartState = startStateEpsilonClosure.joinToString("_")
+        val startStateEpsilonClosure = getEpsilonClosure(startState)
+        newStartState = startStateEpsilonClosure.reduce { combinedStates, startState ->
+            combinedStates.combine(stateDataHelper, startState)
+        }
         newStates.add(newStartState)
-        if (!startStateEpsilonClosure.intersect(finalStates).isEmpty()) {
+        if (startStateEpsilonClosure.intersect(finalStates).isNotEmpty()) {
             newFinalStates.add(newStartState)
         }
         // List of sets, where each set is a state.
         val workList = mutableListOf(startStateEpsilonClosure)
         while (!workList.isEmpty()) {
             val currentStates = workList[workList.size - 1]
-            val currentStatesString = currentStates.joinToString("_")
+            val currentStatesCombined = currentStates.reduce { combinedStates, currentState ->
+                combinedStates.combine(stateDataHelper, currentState)
+            }
             workList.remove(currentStates)
             for (a in alphabet) {
-                var newState: MutableSet<String> = mutableSetOf()
+                var newState: MutableSet<State> = mutableSetOf()
                 for (fromState in currentStates) {
                     for ((transition, toStates) in transitionFn[fromState].orEmpty()) {
                         if (transition == a) {
@@ -141,27 +175,37 @@ data class NFA(
                     }
                 }
                 if (!newState.isEmpty()) {
-                    newState = getEpsilonClosure(newState).toMutableSet()
-                    val newStateString = newState.joinToString("_")
+                    newState = getEpsilonClosure(*newState.toTypedArray()).toMutableSet()
+                    val newStateCombined = newState.reduce {combinedStates, currentState ->
+                        combinedStates.combine(stateDataHelper, currentState)
+                    }
                     // Create a state out of the current states (this is the from state), transition
                     // is a, and create a state out of the new state (this is the to state).
                     val transitionsTo =
-                            if (newTransitionFn.contains(currentStatesString))
-                                newTransitionFn[currentStatesString]
+                            if (newTransitionFn.contains(currentStatesCombined))
+                                newTransitionFn[currentStatesCombined]
                             else mutableMapOf()
-                    transitionsTo?.put(a, mutableSetOf(newStateString))
-                    newTransitionFn[currentStatesString] = transitionsTo.orEmpty().toMutableMap()
-                    if (!newStates.contains(newStateString)) {
-                        newStates.add(newStateString)
+                    transitionsTo?.put(a, mutableSetOf(newStateCombined))
+                    newTransitionFn[currentStatesCombined] = transitionsTo.orEmpty().toMutableMap()
+                    if (!newStates.contains(newStateCombined)) {
+                        newStates.add(newStateCombined)
                         workList.add(newState)
                         if (!newState.intersect(finalStates).isEmpty()) {
-                            newFinalStates.add(newStateString)
+                            newFinalStates.add(newStateCombined)
                         }
                     }
                 }
             }
         }
-        return NFA(newStates, newStartState, newFinalStates, newTransitionFn, alphabet, "", true)
+        return NFA(
+                newStates,
+                newStartState,
+                newFinalStates,
+                newTransitionFn,
+                stateDataHelper,
+                alphabet,
+                "",
+                true)
     }
 
     /**
@@ -170,12 +214,14 @@ data class NFA(
      * return an empty string.
      * @param currentState The current state the DFA is in.
      * @param transition The character in the alphabet the DFA is supposed to read.
+     * @return The new state taken from the old state on the passed transition.
      */
-    fun getNextState(currentState: String, transition: String): String {
-        if (!isDfa || !states.contains(currentState)) {
-            throw ScannerError()
+    fun getNextState(currentState: State?, transition: String): State? {
+        return when {
+            currentState == null -> null
+            !isDfa || !states.contains(currentState) -> throw ScannerError()
+            else -> transitionFn[currentState]?.get(transition)?.first()
         }
-        return transitionFn[currentState]?.get(transition)?.first().orEmpty()
     }
 
     /**
@@ -183,8 +229,8 @@ data class NFA(
      * @param state The state to check.
      * @return True if the state is a final state, and false otherwise.
      */
-    fun isFinalState(state: String): Boolean {
-        return finalStates.contains(state)
+    fun isFinalState(state: State?): Boolean {
+        return state != null && finalStates.contains(state)
     }
 
     /**
@@ -192,9 +238,9 @@ data class NFA(
      * @param states The states of which epsilon closure to find.
      * @return The epsilon closure of the given states.
      */
-    private fun getEpsilonClosure(states: Set<String>): Set<String> {
-        val workList = ArrayList(states)
-        val resultSet = HashSet(states)
+    private fun getEpsilonClosure(vararg states: State): Set<State> {
+        val workList = mutableListOf(*states)
+        val resultSet = mutableSetOf(*states)
         while (!workList.isEmpty()) {
             val fromState = workList[workList.size - 1]
             workList.remove(fromState)
@@ -207,4 +253,86 @@ data class NFA(
         }
         return resultSet
     }
+
+    interface StateData
+
+    interface StateDataHelper {
+        /**
+         * Deserializes the line to parse the state data based on the implementation.
+         * @param line The part of line that contains data that represents the state data.
+         * @return The state data for the state.
+         */
+        fun deserialize(line: String): StateData
+
+        /**
+         * Serializes the state data passed in to a string.
+         * @param stateData The state data that needs to be serialized.
+         * @return The serialized string.
+         */
+        fun serialize(stateData: StateData): String
+
+        /**
+         * Combine the state data passed and return the combined state data.
+         * @param stateDataList The state data list to be combined.
+         * @return The combined state data.
+         */
+        fun combine(vararg stateDataList: StateData): StateData
+    }
+
+    data class State(val name: String, val data: StateData) {
+        /**
+         * Combine the passed states with this state and return the combined state.
+         * @param stateDataHelper The state data helper used to combine state data.
+         * @param otherStates The other states that need to be combined with this state.
+         * @return The combined state.
+         */
+        fun combine(stateDataHelper: StateDataHelper, vararg otherStates: State): State {
+            val allStates = arrayOf(*otherStates, this)
+            val newStateName = allStates.map { it.name }.joinToString("_")
+            val newStateData = stateDataHelper.combine(*(allStates.map { it.data }.toTypedArray()))
+            return State(newStateName, newStateData)
+        }
+    }
+
+    class EmptyStateDataHelper : StateDataHelper {
+        override fun deserialize(line: String): StateData {
+            return EmptyStateData()
+        }
+
+        override fun serialize(stateData: StateData): String {
+            return ""
+        }
+
+        override fun combine(vararg stateDataList: StateData): StateData {
+            return EmptyStateData()
+        }
+    }
+
+    data class EmptyStateData(val data: String = "") : StateData
+
+    // TODO(ayushbhagat): Move to CFG.kt. Also convert each rule string to Rule.
+    class RulesHelper() : StateDataHelper {
+        override fun deserialize(line: String): StateData {
+            return RulesStateData(line.split("  ").toSet())
+        }
+
+        override fun serialize(stateData: StateData): String {
+            return if (stateData is RulesStateData)
+                stateData.rules.joinToString("  ")
+            else ""
+        }
+
+        override fun combine(vararg stateDataList: StateData): StateData {
+            return stateDataList.fold(RulesStateData(setOf()), { combinedStateData, stateData ->
+                if (stateData is RulesStateData) {
+                    RulesStateData(combinedStateData.rules.union(stateData.rules))
+                } else {
+                    combinedStateData
+                }
+            })
+        }
+    }
+
+    // TODO(ayushbhagat): Move to CFG.kt.
+    data class RulesStateData(val rules: Set<String>) : StateData
 }
