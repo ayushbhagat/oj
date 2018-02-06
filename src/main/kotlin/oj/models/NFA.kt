@@ -310,7 +310,7 @@ data class NFA(
 
     data class EmptyStateData(val data: String = "") : StateData
 
-    /* TODO(ayushbhagat): Move to CFG.kt. Also convert each rule string to Rule. */
+    // TODO(ayushbhagat): Move to CFG.kt. Also convert each rule string to Rule.
     class RulesHelper() : StateDataHelper {
         override fun deserialize(line: String): StateData {
             return RulesStateData(line.split("  ").toSet())
@@ -333,6 +333,6 @@ data class NFA(
         }
     }
 
-    /* TODO(ayushbhagat): Move to CFG.kt. */
+    // TODO(ayushbhagat): Move to CFG.kt.
     data class RulesStateData(val rules: Set<String>) : StateData
 }
