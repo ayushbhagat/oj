@@ -1,6 +1,6 @@
-package scripts
+package oj.scripts
 
-import scanner.BASE_DFA_NAMES
+import oj.scanner.BASE_DFA_NAMES
 import java.io.File
 
 fun main(args: Array<String>) {
@@ -20,13 +20,13 @@ fun convertRegexToCharCode(filePath: String) {
                 .indexOf(" ") + 1
         val toState = it.substring(firstSpaceIndex + 1, secondSpaceIndex)
         val transitionRegex = it.substring(secondSpaceIndex + 1)
-        scanner.ALPHABET
-                .filterNot { scanner.BACKSLASH_CHARACTERS.values.contains(it) }
-                .union(scanner.BACKSLASH_CHARACTERS.keys)
+        oj.scanner.ALPHABET
+                .filterNot { oj.scanner.BACKSLASH_CHARACTERS.values.contains(it) }
+                .union(oj.scanner.BACKSLASH_CHARACTERS.keys)
                 .forEach {
                     if (transitionRegex.toRegex().matches(it)) {
                         newContent +="$fromState $toState ${
-                            if (scanner.BACKSLASH_CHARACTERS.contains(it)) scanner.BACKSLASH_CHARACTERS[it]
+                            if (oj.scanner.BACKSLASH_CHARACTERS.contains(it)) oj.scanner.BACKSLASH_CHARACTERS[it]
                             else it
                         }\n"
                     }

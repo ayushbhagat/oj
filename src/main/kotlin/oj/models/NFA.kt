@@ -1,6 +1,6 @@
-package models
+package oj.models
 
-import scanner.ScannerError
+import oj.scanner.ScannerError
 import java.io.File
 
 data class NFA(

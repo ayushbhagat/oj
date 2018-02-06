@@ -1,4 +1,4 @@
-package models
+package oj.models
 
 enum class TokenType {
     COMMENT,
