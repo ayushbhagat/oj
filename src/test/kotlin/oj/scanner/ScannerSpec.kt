@@ -431,8 +431,59 @@ object SimpleCalculatorSpec: SubjectSpek<Scanner>({
                 assertEquals(code, tokens[0].lexeme)
             }
 
+            it("should tokenize valid 3 characters octal") {
+                val code = """'\064'"""
+                val tokens = subject.tokenize(code)
+
+                assertEquals(1, tokens.size)
+                assertEquals(TokenType.CHARACTER, tokens[0].type)
+                assertEquals(code, tokens[0].lexeme)
+            }
+
+            it("should tokenize valid 2 characters octal") {
+                val code = """'\64'"""
+                val tokens = subject.tokenize(code)
+
+                assertEquals(1, tokens.size)
+                assertEquals(TokenType.CHARACTER, tokens[0].type)
+                assertEquals(code, tokens[0].lexeme)
+            }
+
+            it("should tokenize valid 1 character octal") {
+                val code = """'\3'"""
+                val tokens = subject.tokenize(code)
+
+                assertEquals(1, tokens.size)
+                assertEquals(TokenType.CHARACTER, tokens[0].type)
+                assertEquals(code, tokens[0].lexeme)
+            }
+
             it("should reject unknown escape characters") {
                 val code = """'\h'"""
+
+                assertFailsWith(ScannerError::class) {
+                    subject.tokenize(code)
+                }
+            }
+
+            it("should reject invalid 3 characters octal") {
+                val code = """'\412'"""
+
+                assertFailsWith(ScannerError::class) {
+                    subject.tokenize(code)
+                }
+            }
+
+            it("should reject invalid 2 characters octal") {
+                val code = """'\18'"""
+
+                assertFailsWith(ScannerError::class) {
+                    subject.tokenize(code)
+                }
+            }
+
+            it("should reject invalid 1 character octal") {
+                val code = """'\9'"""
 
                 assertFailsWith(ScannerError::class) {
                     subject.tokenize(code)
@@ -488,12 +539,40 @@ object SimpleCalculatorSpec: SubjectSpek<Scanner>({
                 assertEquals(string, nonWhitespaceTokens[3].lexeme)
             }
 
-            it("should reject strings with unknown escape characters") {
-                val string = """"hurrrrrr \z\g""""
+            it("should tokenize escaped 3 characters octal") {
+                val string = """"\164""""
+                val tokens = subject.tokenize(string)
 
-                assertFailsWith(ScannerError::class) {
-                    subject.tokenize("String ayush = $string")
-                }
+                assertEquals(1, tokens.size)
+                assertEquals(TokenType.STRING, tokens[0].type)
+                assertEquals(string, tokens[0].lexeme)
+            }
+
+            it("should tokenize escaped 2 characters octal") {
+                val string = """"\774""""
+                val tokens = subject.tokenize(string)
+
+                assertEquals(1, tokens.size)
+                assertEquals(TokenType.STRING, tokens[0].type)
+                assertEquals(string, tokens[0].lexeme)
+            }
+
+            it("should tokenize escaped 1 character octal") {
+                val string = """"\1""""
+                val tokens = subject.tokenize(string)
+
+                assertEquals(1, tokens.size)
+                assertEquals(TokenType.STRING, tokens[0].type)
+                assertEquals(string, tokens[0].lexeme)
+            }
+
+            it("should tokenize escaped 2 character octal followed by a int") {
+                val string = """"\771""""
+                val tokens = subject.tokenize(string)
+
+                assertEquals(1, tokens.size)
+                assertEquals(TokenType.STRING, tokens[0].type)
+                assertEquals(string, tokens[0].lexeme)
             }
 
             it("should tokenize \"\"") {
@@ -506,11 +585,27 @@ object SimpleCalculatorSpec: SubjectSpek<Scanner>({
                 assertEquals(string, nonWhitespaceTokens[2].lexeme)
             }
 
+            it("should reject strings with unknown escape characters") {
+                val string = """""hurrrrrr \z\g""""
+
+                assertFailsWith(ScannerError::class) {
+                    subject.tokenize("String ayush = $string")
+                }
+            }
+
             it("should reject multi-line strings") {
                 val string = "\"Hi, guys!\n My name is Raman\""
 
                 assertFailsWith(ScannerError::class) {
                     subject.tokenize("\"a\" + $string + \"c\"")
+                }
+            }
+
+            it("should reject invalid 1 character octal") {
+                val string = """"\9""""
+
+                assertFailsWith(ScannerError::class) {
+                    subject.tokenize(string)
                 }
             }
 
