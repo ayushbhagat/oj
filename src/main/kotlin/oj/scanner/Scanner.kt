@@ -6,7 +6,12 @@ import oj.models.TokenType
 
 const val SCANNER_DFA = "scanner"
 
-val BACKSLASH_CHARACTERS = mutableMapOf("\b" to "\\b", "\t" to "\\t", "\n" to "\\n", "\r" to "\\r")
+val BACKSLASH_CHARACTERS = mutableMapOf(
+        "\b" to "\\b",
+        "\t" to "\\t",
+        "\n" to "\\n",
+        "\r" to "\\r",
+        """"\f"""" to "\\f")
 
 val ALPHABET =
         (32..126).map { it.toChar().toString() }
@@ -59,7 +64,12 @@ class Scanner(private var dfa: NFA, private val baseDfas: Set<NFA>) {
                     else
                         code[index].toString()
             currentState = dfa.getNextState(currentState, inputCharacter.orEmpty())
-            if (currentState == null) {
+            if (dfa.isFinalState(currentState)) {
+                lastFinalState = currentState
+                lastFinalStateIndex = index
+            }
+            // If DFA is in error state or the last input character was read.
+            if (currentState == null || index >= code.length - 1) {
                 if (lastFinalState == null) {
                     throw ScannerError()
                 } else {
@@ -73,20 +83,8 @@ class Scanner(private var dfa: NFA, private val baseDfas: Set<NFA>) {
                     lastFinalState = null
                     lastFinalStateIndex = -1
                 }
-            } else {
-                if (dfa.isFinalState(currentState)) {
-                    lastFinalState = currentState
-                    lastFinalStateIndex = index
-                }
             }
             index++
-        }
-        if (dfa.isFinalState(currentState)) {
-            val lexeme = code.substring(lexemeStartIndex, lastFinalStateIndex + 1)
-            tokens.add(Token(getTokenType(lastFinalState, lexeme), lexeme))
-            println(tokens[tokens.size - 1])
-        } else if (currentState != dfa.startState) {
-            throw ScannerError()
         }
         return tokens
     }
