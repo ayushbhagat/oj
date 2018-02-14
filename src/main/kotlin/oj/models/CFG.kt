@@ -46,7 +46,7 @@ class LR1DFAStateDataHelper : NFA.StateDataHelper {
         }
 
         val serializedItems = stateData.items.map({ item ->
-            return "${item.bookmark} ${item.lookahead} ${item.lhs} ${item.rhs.size}" + item.rhs.joinToString(" ")
+            return "${item.bookmark} ${item.lookahead} ${item.lhs} ${item.rhs.size} " + item.rhs.joinToString(" ")
         })
 
         return serializedItems.joinToString(" ")
@@ -87,6 +87,11 @@ data class CFG(
                 .drop(2)
                 .forEach({ line ->
                     val tokens = line.split(" ").filter({ it.trim().isNotEmpty() })
+
+                    if (tokens.size < 2) {
+                        throw CFGError("Invalid rule detected: " + tokens)
+                    }
+
                     val nonTerminal = tokens[0]
                     val expansion = tokens.drop(2)
 
@@ -104,9 +109,31 @@ data class CFG(
                 for (expansion in expansions) {
                     for (terminalOrNonTerminal in expansion) {
                         if (!terminals.contains(terminalOrNonTerminal) && !nonTerminals.contains(terminalOrNonTerminal)) {
-                            throw CFGDeserializationError()
+                            throw CFGError("Symbol $terminalOrNonTerminal not found in terminal or non-terminals.")
                         }
                     }
+                }
+            }
+
+            val symbolsUsed : MutableSet<String> = mutableSetOf()
+
+            for ((_, expansions) in rules) {
+                for (expansion in expansions) {
+                    for (symbol in expansion) {
+                        symbolsUsed.add(symbol)
+                    }
+                }
+            }
+
+            for (terminal in terminals) {
+                if (terminal !in symbolsUsed) {
+                    throw CFGError("Terminal $terminal was not used in any rules.")
+                }
+            }
+
+            for (nonTerminal in nonTerminals - "S") {
+                if (nonTerminal !in symbolsUsed) {
+                    throw CFGError("Non-terminal $nonTerminal was not used in any rules.")
                 }
             }
 
@@ -119,7 +146,6 @@ data class CFG(
 
         val itemsStateDataMap: MutableMap<Set<Item>, NFA.State> = mutableMapOf()
         var stateNum = 0
-
         val getState = { items: Set<Item> ->
             if (!itemsStateDataMap.contains(items)) {
                 val stateData = LR1DFAStateData(items)
@@ -130,14 +156,21 @@ data class CFG(
             itemsStateDataMap[items]!!
         }
 
+        val transitionFn : MutableMap<NFA.State, MutableMap<String, Set<NFA.State>>> = mutableMapOf()
+        val addTransition = { fromState : NFA.State, input: String, toState : NFA.State -> Unit
+            if (!transitionFn.contains(fromState)) {
+                transitionFn[fromState] = mutableMapOf()
+            }
+
+            transitionFn[fromState]!![input] = setOf(toState)
+        }
+
         val startSymbol = start
         val startItems = getExpansions(startSymbol).map({ rhs -> Item(startSymbol, rhs, 0, "$") }).toSet()
         val startState = getState(startItems)
 
-        val states = mutableListOf(startState)
+        val states = mutableSetOf(startState)
         val workList = mutableListOf(startState)
-
-        val transitionFn : MutableMap<NFA.State, MutableMap<String, Set<NFA.State>>> = mutableMapOf()
 
         while (!workList.isEmpty()) {
             val currentState = workList[workList.size - 1]
@@ -145,10 +178,6 @@ data class CFG(
 
             if (currentState.data !is LR1DFAStateData) {
                 throw CFGError("currentState.data is not an instance of LR1DFAStateData")
-            }
-
-            if (!transitionFn.contains(currentState)) {
-                transitionFn[currentState] = mutableMapOf()
             }
 
             val currentItems = currentState.data.items
@@ -163,8 +192,9 @@ data class CFG(
                     val beta = item.rhs.drop(item.bookmark + 1)
 
                     val lookaheads = first(beta + item.lookahead)
+                    val expansions = getExpansions(C)
 
-                    val nextItems = getExpansions(C).flatMap({ rhs ->
+                    val nextItems = expansions.flatMap({ rhs ->
                         lookaheads.map({ lookahead -> Item(C, rhs, 0, lookahead) })
                     }).toSet()
 
@@ -176,10 +206,11 @@ data class CFG(
                             workList.add(nextState)
                         }
 
-                        transitionFn[currentState]!![""] = setOf(nextState)
+                        addTransition(currentState, "", nextState)
                     })
                 }
 
+                // Advance bookmark by 1
                 val X = item.rhs[item.bookmark]
                 val nextItem = Item(item.lhs, item.rhs, item.bookmark + 1, item.lookahead)
                 val nextState = getState(setOf(nextItem))
@@ -189,14 +220,14 @@ data class CFG(
                     workList.add(nextState)
                 }
 
-                transitionFn[currentState]!![X] = setOf(nextState)
+                addTransition(currentState, X, nextState)
             }
         }
 
         val nfa = NFA(
-            states.toSet(),
+            states,
             startState,
-            states.toSet(),
+            HashSet(states),
             transitionFn,
             LR1DFAStateDataHelper(),
             alphabet

@@ -96,7 +96,7 @@ data class NFA(
      * @param stateDataHelper The helper class that knows how to serialize the state data.
      * @return The serialized string.
      */
-    fun serialize(filePath: String, stateDataHelper: StateDataHelper): String {
+    fun serialize(filePath: String): String {
         var serialization = "${states.size}\n"
         serialization +=
                 states.map{ "${it.name} ${stateDataHelper.serialize(it.data)}" }.joinToString("\n")
