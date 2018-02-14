@@ -1,8 +1,6 @@
 package oj.scripts
 
 import oj.models.CFG
-import oj.models.LR1DFAStateDataHelper
-import oj.models.NFA
 import java.io.File
 
 fun main(args: Array<String>) {
@@ -29,5 +27,5 @@ fun main(args: Array<String>) {
         })
     })
 
-    File("jlalr/$cfgName.cfg").bufferedWriter().use { it.write(str) }
+    File("gen/$cfgName-jlalr-input-format.cfg").bufferedWriter().use { it.write(str) }
 }
