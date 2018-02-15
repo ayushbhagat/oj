@@ -1,15 +1,11 @@
-package oj.Parser
+package oj.parser
 
 import oj.models.NFA
 import oj.models.NFA.StateData
 import oj.models.NFA.StateDataHelper
 import oj.models.Token
 import oj.models.TokenType
-
-data class CSTNode(
-    val name: String,
-    val children: MutableList<CSTNode> = mutableListOf()
-)
+import oj.models.CSTNode
 
 data class Rule(val lhs: String, val rhs: List<String>) {
     override fun toString() : String {
@@ -86,8 +82,25 @@ class Parser(
     private val dfa: NFA
 ) {
     fun parse(tokens: List<Token>) : CSTNode {
+        val tokenTerminals = setOf(
+            TokenType.IDENTIFIER,
+            TokenType.INTEGER,
+            TokenType.BOOLEAN,
+            TokenType.CHARACTER,
+            TokenType.STRING,
+            TokenType.NULL
+        )
+
+        val ignoredTokenTypes = setOf(TokenType.WHITESPACE, TokenType.COMMENT)
+        val relevantTokens = tokens.filter({ token -> !ignoredTokenTypes.contains(token.type)})
+
         val input: MutableList<String> = mutableListOf("BOF")
-        input.addAll(tokens.map({ convertTokenToCFGTerminal(it) }).filter({ it.isNotEmpty() }))
+        input.addAll(relevantTokens.map({token ->
+            when {
+                token.type in tokenTerminals -> token.type.toString()
+                else -> token.lexeme
+            }
+        }))
         input.add("EOF")
 
         val stateStack = mutableListOf(dfa.startState)
@@ -96,6 +109,11 @@ class Parser(
         var inputIndex = 0
         while (inputIndex < input.size) {
             val symbol = input[inputIndex]
+            val lexeme : String = when {
+                symbol in tokenTerminals.map({ it.toString() }) -> relevantTokens[inputIndex - 1].lexeme
+                else -> ""
+            }
+
             val currentState = stateStack.last()
             if (currentState.data !is CFGStateData) {
                 throw ParseError("Invalid state data type")
@@ -111,7 +129,7 @@ class Parser(
                     node
                 }).reversed().toMutableList()
 
-                val node = CSTNode(rule.lhs, children)
+                val node = CSTNode(rule.lhs, lexeme, children)
                 cstNodeStack.add(node)
 
                 val nextState = dfa.getNextDFAState(stateStack.last(), rule.lhs)
@@ -127,7 +145,7 @@ class Parser(
                 }
 
                 stateStack.add(nextState)
-                val node = CSTNode(symbol)
+                val node = CSTNode(symbol, lexeme)
                 cstNodeStack.add(node)
 
                 inputIndex += 1
@@ -145,23 +163,5 @@ class Parser(
         }
 
         return parseTree
-    }
-
-    fun convertTokenToCFGTerminal(token: Token) : String {
-        val tokenTerminals = listOf(
-            TokenType.IDENTIFIER,
-            TokenType.INTEGER,
-            TokenType.BOOLEAN,
-            TokenType.CHARACTER,
-            TokenType.STRING,
-            TokenType.NULL
-        )
-        val ignoredTokens = listOf(TokenType.WHITESPACE, TokenType.COMMENT)
-
-        return when {
-            token.type in tokenTerminals -> token.type.toString()
-            token.type in ignoredTokens -> ""
-            else -> token.lexeme
-        }
     }
 }

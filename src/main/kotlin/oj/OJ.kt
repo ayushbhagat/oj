@@ -1,5 +1,5 @@
-import oj.Parser.CFGStateDataHelper
-import oj.Parser.Parser
+import oj.parser.CFGStateDataHelper
+import oj.parser.Parser
 import oj.models.NFA
 import oj.scanner.BASE_DFA_NAMES
 import oj.scanner.SCANNER_DFA

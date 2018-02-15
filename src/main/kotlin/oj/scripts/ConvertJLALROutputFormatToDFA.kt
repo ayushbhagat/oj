@@ -1,8 +1,8 @@
 package oj.scripts
 
-import oj.Parser.CFGStateData
-import oj.Parser.CFGStateDataHelper
-import oj.Parser.Rule
+import oj.parser.CFGStateData
+import oj.parser.CFGStateDataHelper
+import oj.parser.Rule
 import java.io.File
 
 fun main(args: Array<String>) {
