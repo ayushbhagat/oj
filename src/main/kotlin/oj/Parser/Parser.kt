@@ -80,7 +80,7 @@ class CFGStateDataHelper : StateDataHelper {
     }
 }
 
-class ParserError(reason: String): Exception(reason)
+class ParseError(reason: String): Exception(reason)
 
 class Parser(
     private val dfa: NFA
@@ -98,7 +98,7 @@ class Parser(
             val symbol = input[inputIndex]
             val currentState = stateStack.last()
             if (currentState.data !is CFGStateData) {
-                throw ParserError("Invalid state data type")
+                throw ParseError("Invalid state data type")
             }
 
             val rule = currentState.data.items[symbol]
@@ -115,13 +115,13 @@ class Parser(
                 cstNodeStack.add(node)
 
                 val nextState = dfa.getNextDFAState(stateStack.last(), rule.lhs)
-                nextState ?: throw ParserError("Invalid symbol detected: $symbol")
+                nextState ?: throw ParseError("Invalid symbol detected: $symbol")
 
                 stateStack.add(nextState)
             } else {
                 val nextState = dfa.getNextDFAState(currentState, symbol)
                 if (nextState == null) {
-                    throw ParserError("Invalid symbol detected at ${currentState.name}: $symbol")
+                    throw ParseError("Invalid symbol detected at ${currentState.name}: $symbol")
                 }
 
                 stateStack.add(nextState)
@@ -132,13 +132,17 @@ class Parser(
             }
         }
 
-        val cstNodeTop = cstNodeStack.first()
-
-        if (cstNodeTop.name != "S") {
-            throw ParserError("Failed to generate a parse tree")
+        if (cstNodeStack.size != 3) {
+            throw ParseError("Failed to generate parse tree")
         }
 
-        return cstNodeTop
+        val parseTree = cstNodeStack[1]
+
+        if (parseTree.name != "CompilationUnit") {
+            throw ParseError("Failed to generate a parse tree")
+        }
+
+        return parseTree
     }
 
     fun convertTokenToCFGTerminal(token: Token) : String {

@@ -2,7 +2,6 @@ package jlalr;
 
 import java.util.*;
 import java.io.*;
-import java.util.stream.*;
 
 /*
    Copyright 2006,2008,2009 Ondrej Lhotak. All rights reserved.
@@ -43,11 +42,11 @@ class Item {
         this.lookahead = lookahead;
     }
     private static Map<Pair<Production, Pair<Integer, String>>, Item> map =
-        new HashMap<Pair<Production, Pair<Integer, String>>, Item>();
+      new HashMap<Pair<Production, Pair<Integer, String>>, Item>();
     public static Item v(Production rule, int pos, String lookahead) {
         Pair<Production, Pair<Integer, String>> triple =
-            new Pair<Production, Pair<Integer, String>>(
-                    rule, new Pair<Integer, String>(pos, lookahead));
+          new Pair<Production, Pair<Integer, String>>(
+            rule, new Pair<Integer, String>(pos, lookahead));
         Item ret = map.get(triple);
         if(ret == null) {
             ret = new Item(rule, pos, lookahead);
@@ -75,22 +74,16 @@ class Item {
     }
     public String toString() {
         StringBuffer ret = new StringBuffer();
-        // ret.append("(");
+        ret.append("(");
         ret.append(rule.lhs);
         ret.append(" ->");
-
-        if (rule.rhs.length != 0) {
-          int i;
-          for(i = 0; i < pos; i++) ret.append(" "+rule.rhs[i]);
-          ret.append(" •");
-          for(; i < rule.rhs.length; i++) ret.append(" "+rule.rhs[i]);
-        } else {
-          ret.append(" Ɛ •");
-        }
-
-        ret.append(" : ");
+        int i;
+        for(i = 0; i < pos; i++) ret.append(" "+rule.rhs[i]);
+        ret.append(" ##");
+        for(; i < rule.rhs.length; i++) ret.append(" "+rule.rhs[i]);
+        ret.append(", ");
         ret.append(lookahead);
-        // ret.append(")");
+        ret.append(")");
         return ret.toString();
     }
 }
@@ -111,28 +104,7 @@ class State {
     public String toString() {
         StringBuffer ret = new StringBuffer();
         ret.append("\n");
-
-        List<Item> sortedItems = items
-          .stream()
-          .sorted((item1, item2) -> {
-            if (item1.rule.rhs.length < item2.rule.rhs.length) {
-              return -1;
-            }
-
-            if (item1.rule.rhs.length > item2.rule.rhs.length) {
-              return 1;
-            }
-
-            if (item1.rule.rhs.length == 0) {
-              return 0;
-            }
-
-            return item1.rule.rhs[0].compareTo(item2.rule.rhs[0]);
-          })
-          .sorted((item1, item2) -> item1.rule.lhs.compareTo(item2.rule.lhs))
-          .collect(Collectors.toList());
-
-        for(Item item : sortedItems) {
+        for(Item item : items) {
             ret.append(item);
             ret.append("\n");
         }
@@ -260,10 +232,6 @@ class Generator {
                 }
             }
             generalFirstCache.put(l, ret);
-
-            // if (ret.contains("IDENTIFIER")) {
-            //   System.err.println(l);
-            // }
         }
         return ret;
     }
@@ -290,9 +258,6 @@ class Generator {
                 Collection<String> ws = generalFirst(betaz);
                 for( Production r : lhsToRules.get(x)) {
                     for( String w : ws ) {
-                        // if (ws.contains("(") && r.lhs.equals("Expression") && r.rhs.length == 0) {
-                        //   System.err.println("betaz: " + betaz);
-                        // }
                         Item newItem = Item.v(r, 0, w);
                         if(i.add(newItem)) q.add(newItem);
                     }
@@ -332,7 +297,7 @@ class Generator {
         Action old = table.get(p);
         if(old != null && !old.equals(a)) {
             throw new Error(
-                "Conflict on symbol "+sym+" in state "+state+"\n"+
+              "Conflict on symbol "+sym+" in state "+state+"\n"+
                 "Possible actions:\n"+
                 old+"\n"+a);
         }
@@ -375,18 +340,18 @@ class Generator {
                 for(int i = 0; i < k; i++) {
                     if(allNullable(rule.rhs, 0, i)) {
                         if( first.get(rule.lhs).addAll(
-                                first.get(rule.rhs[i])))
+                          first.get(rule.rhs[i])))
                             change = true;
                     }
                     if(allNullable(rule.rhs, i+1,k)) {
                         if( follow.get(rule.rhs[i]).addAll(
-                                follow.get(rule.lhs)))
+                          follow.get(rule.lhs)))
                             change = true;
                     }
                     for(int j = i+1; j < k; j++) {
                         if(allNullable(rule.rhs, i+1,j)) {
                             if( follow.get(rule.rhs[i]).addAll(
-                                    first.get(rule.rhs[j])))
+                              first.get(rule.rhs[j])))
                                 change = true;
                         }
                     }
@@ -396,7 +361,7 @@ class Generator {
     }
     /** The computed parse table. */
     Map<Pair<State,String>,Action> table =
-        new HashMap<Pair<State,String>,Action>();
+      new HashMap<Pair<State,String>,Action>();
     State initialState;
 
     /** Generates the LR(0) parse table using the algorithms on
@@ -484,38 +449,16 @@ class Generator {
         q.add(initialState);
         // compute goto actions
         System.err.println("Computing goto actions");
-
-        Map<State, Pair<String, State>> gotoParentMap = new HashMap<>();
-        // Map<State, State> parents = new HashMap<>();
-
         while(!q.isEmpty()) {
             State i = q.remove();
             for( Item item : i.items ) {
                 if(!item.hasNextSym()) continue;
                 String x = item.nextSym();
                 State j = lr1_goto_(i, x);
-
-                // parents.put(j, i);
-
-                gotoParentMap.put(j, new Pair<>(x, i));
                 if(t.add(j)) {
-                    // System.err.print(".");
+                    System.err.print(".");
                     q.add(j);
                 }
-
-                // for (Item childItem : j.items) {
-                //   if (childItem.rule.lhs.equals("Primary") &&
-                //       childItem.rule.rhs[0].equals("(") &&
-                //       childItem.rule.rhs[1].equals("Expression") &&
-                //       childItem.rule.rhs[2].equals(")") &&
-                //       !childItem.hasNextSym() &&
-                //       childItem.lookahead.equals("IDENTIFIER")) {
-                //     System.err.println("Previous State: " + i);
-                //     System.err.println("x: " + x);
-                //     System.err.println("Current State: " + j);
-                //     System.err.println("");
-                //   }
-                // }
                 addAction(i, x, new ShiftAction(j));
             }
         }
@@ -524,59 +467,7 @@ class Generator {
         for( State i : t ) {
             for( Item item : i.items ) {
                 if( item.hasNextSym() ) continue;
-
-                try {
-                  addAction(i, item.lookahead, new ReduceAction(item.rule));
-                } catch (Error ex) {
-
-                  // State currentState = i;
-                  // List<State> list = new ArrayList<>();
-                  // Set<State> seen = new HashSet<>();
-                  //
-                  // while (currentState != initialState) {
-                  //   if (seen.contains(currentState)) {
-                  //     System.err.println("Detected a cycle in the DFA");
-                  //     break;
-                  //   }
-                  //
-                  //   list.add(currentState);
-                  //   seen.add(currentState);
-                  //   currentState = parents.get(currentState);
-                  // }
-                  //
-                  // for (int j = list.size() - 1; j >= 0; j -= 1) {
-                  //   System.err.println("State: " + list.get(j));
-                  //   System.err.println("");
-                  // }
-
-                  System.err.println("Detected reduce-reduce conflict.");
-
-                  State current = i;
-                  List<String> inputs = new ArrayList<>();
-                  Set<State> visited = new HashSet<>();
-
-                  while (gotoParentMap.containsKey(current)) {
-                    if (visited.contains(current)) {
-                      System.err.println("Detected cycle");
-                      break;
-                    }
-
-                    visited.add(current);
-                    Pair<String, State> parent = gotoParentMap.get(current);
-                    inputs.add(parent.getO1());
-                    current = parent.getO2();
-                  }
-
-                  System.err.println("Printing tokens:");
-
-                  Collections.reverse(inputs);
-
-                  for (String input : inputs) {
-                    System.err.println(input);
-                  }
-
-                  throw ex;
-                }
+                addAction(i, item.lookahead, new ReduceAction(item.rule));
             }
         }
     }
@@ -701,10 +592,10 @@ class Generator {
             Action a = e.getValue();
             if(a instanceof ShiftAction) {
                 System.out.println("shift "+
-                        stateMap.get(((ShiftAction)a).nextState));
+                  stateMap.get(((ShiftAction)a).nextState));
             } else if(a instanceof ReduceAction) {
                 System.out.println("reduce "+
-                        ruleMap.get(((ReduceAction)a).rule));
+                  ruleMap.get(((ReduceAction)a).rule));
             } else throw new Error("Internal error: unknown action");
         }
     }
@@ -733,75 +624,75 @@ class Jlr1 {
         }
     }
 }
-// class Jlr0 {
-//     public static final void main(String[] args) {
-//         Grammar grammar;
-//         try {
-//             grammar = Util.readGrammar(new Scanner(System.in));
-//             Util.writeGrammar(grammar);
-//         } catch(Error e) {
-//             System.err.println("Error reading grammar: "+e);
-//             System.exit(1);
-//             return;
-//         }
-//         Generator jlr = new Generator(grammar);
-//         try {
-//             jlr.computeFirstFollowNullable();
-//             jlr.generateLR0Table();
-//             jlr.generateOutput();
-//         } catch(Error e) {
-//             System.err.println("Error performing LR(0) construction: "+e);
-//             System.exit(1);
-//             return;
-//         }
-//     }
-// }
-// class Jslr1 {
-//     public static final void main(String[] args) {
-//         Grammar grammar;
-//         try {
-//             grammar = Util.readGrammar(new Scanner(System.in));
-//             Util.writeGrammar(grammar);
-//         } catch(Error e) {
-//             System.err.println("Error reading grammar: "+e);
-//             System.exit(1);
-//             return;
-//         }
-//         Generator jslr = new Generator(grammar);
-//         try {
-//             jslr.computeFirstFollowNullable();
-//             jslr.generateSLR1Table();
-//             jslr.generateOutput();
-//         } catch(Error e) {
-//             System.err.println("Error performing SLR(1) construction: "+e);
-//             System.exit(1);
-//             return;
-//         }
-//     }
-// }
-// public class Jlalr1 {
-//     public static final void main(String[] args) {
-//         Grammar grammar;
-//         try {
-//             grammar = Util.readGrammar(new Scanner(System.in));
-//             Util.writeGrammar(grammar);
-//         } catch(Error e) {
-//             System.err.println("Error reading grammar: "+e);
-//             System.exit(1);
-//             return;
-//         }
-//         Generator jlalr = new Generator(grammar);
-//         try {
-//             jlalr.computeFirstFollowNullable();
-//             jlalr.generateLALR1Table();
-//             jlalr.generateOutput();
-//         } catch(Error e) {
-//             System.err.println("Error performing LALR(1) construction: "+e);
-//             System.exit(1);
-//             return;
-//         }
-//     }
-// }
+class Jlr0 {
+    public static final void main(String[] args) {
+        Grammar grammar;
+        try {
+            grammar = Util.readGrammar(new Scanner(System.in));
+            Util.writeGrammar(grammar);
+        } catch(Error e) {
+            System.err.println("Error reading grammar: "+e);
+            System.exit(1);
+            return;
+        }
+        Generator jlr = new Generator(grammar);
+        try {
+            jlr.computeFirstFollowNullable();
+            jlr.generateLR0Table();
+            jlr.generateOutput();
+        } catch(Error e) {
+            System.err.println("Error performing LR(0) construction: "+e);
+            System.exit(1);
+            return;
+        }
+    }
+}
+class Jslr1 {
+    public static final void main(String[] args) {
+        Grammar grammar;
+        try {
+            grammar = Util.readGrammar(new Scanner(System.in));
+            Util.writeGrammar(grammar);
+        } catch(Error e) {
+            System.err.println("Error reading grammar: "+e);
+            System.exit(1);
+            return;
+        }
+        Generator jslr = new Generator(grammar);
+        try {
+            jslr.computeFirstFollowNullable();
+            jslr.generateSLR1Table();
+            jslr.generateOutput();
+        } catch(Error e) {
+            System.err.println("Error performing SLR(1) construction: "+e);
+            System.exit(1);
+            return;
+        }
+    }
+}
+public class Jlalr1 {
+    public static final void main(String[] args) {
+        Grammar grammar;
+        try {
+            grammar = Util.readGrammar(new Scanner(System.in));
+            Util.writeGrammar(grammar);
+        } catch(Error e) {
+            System.err.println("Error reading grammar: "+e);
+            System.exit(1);
+            return;
+        }
+        Generator jlalr = new Generator(grammar);
+        try {
+            jlalr.computeFirstFollowNullable();
+            jlalr.generateLALR1Table();
+            jlalr.generateOutput();
+        } catch(Error e) {
+            System.err.println("Error performing LALR(1) construction: "+e);
+            System.exit(1);
+            return;
+        }
+    }
+}
 /** A production in the grammar. */
 class Production {
     public String lhs;
@@ -810,7 +701,7 @@ class Production {
         this.lhs = lhs; this.rhs = rhs;
     }
     private static Map<Pair<String, String[]>, Production> map =
-        new HashMap<Pair<String, String[]>, Production>();
+      new HashMap<Pair<String, String[]>, Production>();
     public static Production v(String lhs, String[] rhs) {
         Pair<String, String[]> pair = new Pair<String, String[]>(lhs, rhs);
         Production ret = map.get(pair);
@@ -823,13 +714,9 @@ class Production {
     public String toString() {
         StringBuffer ret = new StringBuffer();
         ret.append(lhs);
-        ret.append(" ->");
-        if (rhs.length == 0) {
-          ret.append(" Ɛ");
-        } else {
-          for(String sym : rhs) {
-              ret.append(" " + sym);
-          }
+        //ret.append(" ->");
+        for(String sym : rhs) {
+            ret.append(" "+sym);
         }
         return ret.toString();
     }
@@ -891,7 +778,7 @@ class Util {
 
         grammar.start = readLine(in, "Expecting start symbol").intern();
         if(!grammar.nonterminals.contains(grammar.start)) throw new Error(
-            "Start symbol "+grammar.start+" was not declared as a non-terminal.");
+          "Start symbol "+grammar.start+" was not declared as a non-terminal.");
 
         line = readLine(in, "Expecting number of productions");
         int nprods = toInt(line, "number of productions");
@@ -920,7 +807,7 @@ class Util {
             rhs.add(sym);
         }
         return Production.v(lhs,
-                (String[]) rhs.toArray(new String[rhs.size()]));
+          (String[]) rhs.toArray(new String[rhs.size()]));
     }
     static String checkIndent(String line, int indent) {
         for(int i = 0; i < indent; i++) {
