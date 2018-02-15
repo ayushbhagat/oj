@@ -4,6 +4,7 @@ import oj.models.NFA
 import oj.scanner.BASE_DFA_NAMES
 import oj.scanner.SCANNER_DFA
 import oj.scanner.Scanner
+import oj.weeder.Weeder
 import java.io.File
 
 fun main(args: Array<String>) {
@@ -40,7 +41,8 @@ fun main(args: Array<String>) {
         )
 
         val parser = Parser(lr1DFA)
-        parser.parse(tokens)
+        val cst = parser.parse(tokens)
+        Weeder.weed(cst)
     } catch (e: Exception) {
         e.printStackTrace()
         println(e.message)
