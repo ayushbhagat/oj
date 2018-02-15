@@ -1,5 +1,8 @@
 package oj.scripts
 
+import oj.Parser.CFGStateData
+import oj.Parser.CFGStateDataHelper
+import oj.Parser.Rule
 import java.io.File
 
 fun main(args: Array<String>) {
@@ -33,18 +36,35 @@ fun main(args: Array<String>) {
         it.split(" ")[2] == "reduce"
     })
 
-    reduceDfaLines
-        .map({ line ->
+    val stateDataHelper = CFGStateDataHelper()
+
+    val reduceLines = reduceDfaLines
+        .fold(mutableMapOf<String, MutableMap<String, Rule>>(), { acc, line ->
             val tokens = line.split(" ")
             val state = tokens[0]
+            val lookahead = tokens[1]
             val ruleNum = tokens[3].toInt()
-            val rule = productionRules[ruleNum]
-            "$state $rule"
+
+            val rule = Rule.deserialize(productionRules[ruleNum])
+
+            val items = acc[state] ?: mutableMapOf()
+
+            items[lookahead] = rule
+            acc[state] = items
+
+            acc
         })
-        .forEach({ write(it) })
+        .map({ entry ->
+            val state = entry.key
+            val items = entry.value
+            "$state ${stateDataHelper.serialize(CFGStateData(items))}"
+        })
+
+    reduceLines.forEach({ write(it) })
+
 
     val reduceStates = reduceDfaLines.map({ it.split(" ")[0] }).toSet()
-    val allStates = IntRange(0, numStates).map({ it.toString() }).toSet()
+    val allStates = IntRange(0, Math.max(numStates - 1, 0)).map({ it.toString() }).toSet()
 
     (allStates - reduceStates).forEach({ write(it) })
 

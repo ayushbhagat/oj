@@ -3,7 +3,7 @@ package oj.models
 import java.io.File
 
 class CFGDeserializationError: Exception("CFG Deserialization Error")
-class CFGError(reason :String): Exception(reason)
+class CFGError(reason: String): Exception(reason)
 
 data class Item(
     val lhs: String,

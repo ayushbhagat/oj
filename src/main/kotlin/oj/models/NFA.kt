@@ -1,7 +1,8 @@
 package oj.models
 
-import oj.scanner.ScannerError
 import java.io.File
+
+class NFAError(reason: String): Exception(reason)
 
 data class NFA(
         val states: Set<State>,
@@ -10,8 +11,7 @@ data class NFA(
         val transitionFn: Map<State, Map<String, Set<State>>>,
         val stateDataHelper: StateDataHelper,
         val alphabet: Set<String>,
-        val name: String = "",
-        val isDfa: Boolean = false) {
+        val name: String = "") {
     companion object {
         /**
          * Returns the NFA created from the file at the provided file path and the type.
@@ -204,8 +204,7 @@ data class NFA(
                 newTransitionFn,
                 stateDataHelper,
                 alphabet,
-                "",
-                true)
+                "")
     }
 
     /**
@@ -216,10 +215,10 @@ data class NFA(
      * @param transition The character in the alphabet the DFA is supposed to read.
      * @return The new state taken from the old state on the passed transition.
      */
-    fun getNextState(currentState: State?, transition: String): State? {
+    fun getNextDFAState(currentState: State?, transition: String): State? {
         return when {
             currentState == null -> null
-            !isDfa || !states.contains(currentState) -> throw ScannerError()
+            !states.contains(currentState) -> throw NFAError("States doesn't contain state $currentState")
             else -> transitionFn[currentState]?.get(transition)?.first()
         }
     }

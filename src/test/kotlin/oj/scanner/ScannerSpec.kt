@@ -27,7 +27,7 @@ object SimpleCalculatorSpec: SubjectSpek<Scanner>({
                 "gen/$SCANNER_DFA.dfa",
                 NFA.EmptyStateDataHelper(),
                 oj.scanner.ALPHABET,
-                "")
+                "").toDFA()
         Scanner(scannerDfa, baseDfas)
     }
 

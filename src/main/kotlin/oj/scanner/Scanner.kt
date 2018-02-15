@@ -39,12 +39,6 @@ val BASE_DFA_NAMES = mapOf(
         "whitespace" to TokenType.WHITESPACE)
 
 class Scanner(private var dfa: NFA, private val baseDfas: Set<NFA>) {
-    init {
-        if (!dfa.isDfa) {
-            dfa = dfa.toDFA()
-        }
-    }
-
     /**
      * Return a tokenization of the input program.
      * @param code The code to tokenize.
@@ -63,7 +57,7 @@ class Scanner(private var dfa: NFA, private val baseDfas: Set<NFA>) {
                         BACKSLASH_CHARACTERS[code[index].toString()]
                     else
                         code[index].toString()
-            currentState = dfa.getNextState(currentState, inputCharacter.orEmpty())
+            currentState = dfa.getNextDFAState(currentState, inputCharacter.orEmpty())
             if (dfa.isFinalState(currentState)) {
                 lastFinalState = currentState
                 lastFinalStateIndex = index
