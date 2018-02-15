@@ -11,5 +11,5 @@ fun main(args: Array<String>) {
     baseDfas
             .reduce{ nfa, dfa -> nfa.or(dfa) }
             .toDFA()
-            .serialize("gen/$SCANNER_DFA.dfa", NFA.EmptyStateDataHelper())
+            .serialize("gen/$SCANNER_DFA.dfa")
 }

@@ -1,7 +1,8 @@
 package oj.models
 
-import oj.scanner.ScannerError
 import java.io.File
+
+class NFAError(reason: String): Exception(reason)
 
 data class NFA(
         val states: Set<State>,
@@ -10,8 +11,7 @@ data class NFA(
         val transitionFn: Map<State, Map<String, Set<State>>>,
         val stateDataHelper: StateDataHelper,
         val alphabet: Set<String>,
-        val name: String = "",
-        val isDfa: Boolean = false) {
+        val name: String = "") {
     companion object {
         /**
          * Returns the NFA created from the file at the provided file path and the type.
@@ -96,7 +96,7 @@ data class NFA(
      * @param stateDataHelper The helper class that knows how to serialize the state data.
      * @return The serialized string.
      */
-    fun serialize(filePath: String, stateDataHelper: StateDataHelper): String {
+    fun serialize(filePath: String): String {
         var serialization = "${states.size}\n"
         serialization +=
                 states.map{ "${it.name} ${stateDataHelper.serialize(it.data)}" }.joinToString("\n")
@@ -160,11 +160,11 @@ data class NFA(
         // List of sets, where each set is a state.
         val workList = mutableListOf(startStateEpsilonClosure)
         while (!workList.isEmpty()) {
-            val currentStates = workList[workList.size - 1]
+            val currentStates = workList.last()
             val currentStatesCombined = currentStates.reduce { combinedStates, currentState ->
                 combinedStates.combine(stateDataHelper, currentState)
             }
-            workList.remove(currentStates)
+            workList.removeAt(workList.size - 1)
             for (a in alphabet) {
                 var newState: MutableSet<State> = mutableSetOf()
                 for (fromState in currentStates) {
@@ -204,8 +204,7 @@ data class NFA(
                 newTransitionFn,
                 stateDataHelper,
                 alphabet,
-                "",
-                true)
+                "")
     }
 
     /**
@@ -216,10 +215,10 @@ data class NFA(
      * @param transition The character in the alphabet the DFA is supposed to read.
      * @return The new state taken from the old state on the passed transition.
      */
-    fun getNextState(currentState: State?, transition: String): State? {
+    fun getNextDFAState(currentState: State?, transition: String): State? {
         return when {
             currentState == null -> null
-            !isDfa || !states.contains(currentState) -> throw ScannerError()
+            !states.contains(currentState) -> throw NFAError("States doesn't contain state $currentState")
             else -> transitionFn[currentState]?.get(transition)?.first()
         }
     }
@@ -242,8 +241,8 @@ data class NFA(
         val workList = mutableListOf(*states)
         val resultSet = mutableSetOf(*states)
         while (!workList.isEmpty()) {
-            val fromState = workList[workList.size - 1]
-            workList.remove(fromState)
+            val fromState = workList.last()
+            workList.removeAt(workList.size - 1)
             for (toState in transitionFn[fromState]?.get("").orEmpty()) {
                 if (!resultSet.contains(toState)) {
                     resultSet.add(toState)
