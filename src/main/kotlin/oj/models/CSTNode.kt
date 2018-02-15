@@ -8,6 +8,10 @@ data class CSTNode(
     val children: MutableList<CSTNode> = mutableListOf()
 ) {
     fun getDescendants(name: String): Set<CSTNode> {
+        return getDescendants({ it.name == name})
+    }
+
+    fun getDescendants(predicate: (CSTNode) -> Boolean): Set<CSTNode> {
         val descendants = mutableSetOf<CSTNode>()
         val queue: Queue<CSTNode> = LinkedList<CSTNode>()
         queue.offer(this)
@@ -15,7 +19,7 @@ data class CSTNode(
         while (queue.isNotEmpty()) {
             val child = queue.remove()
 
-            if (child.name == name) {
+            if (predicate(child)) {
                 descendants.add(child)
             } else {
                 child.children.forEach({ grandChild -> queue.offer(grandChild) })

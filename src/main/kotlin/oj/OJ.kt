@@ -7,12 +7,16 @@ import oj.scanner.Scanner
 import oj.weeder.Weeder
 import java.io.File
 
+class InvalidClassOrInterfaceNameError(message: String) : Exception(message)
+
 fun main(args: Array<String>) {
     if (args.isEmpty()) {
         System.exit(42)
     }
+    val filename = args[0]
+
     try {
-        var inputFileString = File(args[0]).inputStream().bufferedReader().use { it.readText() }
+        var inputFileString = File(filename).inputStream().bufferedReader().use { it.readText() }
         //var inputFileString = File("test/programs/HelloWorld.java").inputStream().bufferedReader().use{ it.readText() }
         var baseDfas = BASE_DFA_NAMES
                 .keys
@@ -43,6 +47,21 @@ fun main(args: Array<String>) {
         val parser = Parser(lr1DFA)
         val cst = parser.parse(tokens)
         Weeder.weed(cst)
+
+        cst
+            .getDescendants({ it.name == "ClassDeclaration" || it.name == "InterfaceDeclaration" })
+            .forEach({ node ->
+                val classOrInterfaceName = node.children[2].lexeme
+                val expectedFileName = "$classOrInterfaceName.java"
+                val expectedClassName = filename.split("/").last().replace(".java", "")
+
+                if (!filename.endsWith(expectedFileName)) {
+                    throw InvalidClassOrInterfaceNameError(
+                        "Expected ${node.name} \"$classOrInterfaceName\" to be named \"$expectedClassName\"."
+                    )
+                }
+            })
+
     } catch (e: Exception) {
         e.printStackTrace()
         println(e.message)
