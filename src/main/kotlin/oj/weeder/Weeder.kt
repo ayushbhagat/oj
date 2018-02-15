@@ -2,7 +2,6 @@ package oj.weeder
 
 import oj.models.CSTNode
 import oj.models.CSTNodeVisitor
-import java.util.*
 
 open class WeedError(reason: String) : Exception(reason)
 
@@ -11,7 +10,7 @@ class GeneralModifiersWeeder : CSTNodeVisitor() {
     class VisibilityNotFoundError : WeedError("Visibility not found in modifiers. Should be one of \"protected\" or \"public\"")
 
     override fun visitModifiers(node: CSTNode) {
-        val modifiers = node.getDescendents("Modifier").map({ it.children[0].name }).toSet()
+        val modifiers = node.getDescendants("Modifier").map({ it.children[0].name }).toSet()
 
         val isFinal = "final" in modifiers
         val isAbstract = "abstract" in modifiers
@@ -42,7 +41,7 @@ class MethodIsAbstractOrNativeIFFItHasNoMethodBodyWeeder : CSTNodeVisitor() {
         val methodBodyNode = node.children[1]
 
         val modifiersNode = methodHeaderNode.children[0]
-        val modifiers = modifiersNode.getDescendents("Modifier").map({ it.children[0].name }).toSet()
+        val modifiers = modifiersNode.getDescendants("Modifier").map({ it.children[0].name }).toSet()
 
         val isAbstract = "abstract" in modifiers
         val isNative = "native" in modifiers
@@ -84,7 +83,7 @@ class MethodModifiersWeeder : CSTNodeVisitor() {
     override fun visitMethodHeader(node: CSTNode) {
         val methodHeaderNode = node
         val modifiersNode = methodHeaderNode.children[0]
-        val modifiers = modifiersNode.getDescendents("Modifier").map({ it.children[0].name }).toSet()
+        val modifiers = modifiersNode.getDescendants("Modifier").map({ it.children[0].name }).toSet()
 
         val isStatic = "static" in modifiers
         val isAbstract = "abstract" in modifiers

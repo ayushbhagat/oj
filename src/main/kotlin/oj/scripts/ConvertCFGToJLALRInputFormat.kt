@@ -4,7 +4,7 @@ import oj.models.CFG
 import java.io.File
 
 fun main(args: Array<String>) {
-    val cfgName = "joos-cornell"
+    val cfgName = "joos"
     val cfg : CFG = CFG.deserialize("cfg/$cfgName.cfg")
 
     var str = ""
