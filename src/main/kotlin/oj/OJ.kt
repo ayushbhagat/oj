@@ -7,13 +7,11 @@ import oj.scanner.Scanner
 import java.io.File
 
 fun main(args: Array<String>) {
-    /*if (args.isEmpty()) {
+    if (args.isEmpty()) {
         System.exit(42)
-    }*/
+    }
     try {
-        //var inputFileString = File(args[0]).inputStream().bufferedReader().use { it.readText() }
-        val fileName = "HelloWorld.java"
-        var inputFileString = File("test/programs/$fileName").inputStream().bufferedReader().use { it.readText() }
+        var inputFileString = File(args[0]).inputStream().bufferedReader().use { it.readText() }
         var baseDfas = BASE_DFA_NAMES
                 .keys
                 .map {
@@ -42,7 +40,6 @@ fun main(args: Array<String>) {
 
         val parser = Parser(lr1DFA)
         val cst = parser.parse(tokens)
-        println("")
     } catch (e: Exception) {
         e.printStackTrace()
         println(e.message)
