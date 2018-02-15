@@ -12,6 +12,7 @@ fun main(args: Array<String>) {
     }
     try {
         var inputFileString = File(args[0]).inputStream().bufferedReader().use { it.readText() }
+        //var inputFileString = File("test/programs/HelloWorld.java").inputStream().bufferedReader().use{ it.readText() }
         var baseDfas = BASE_DFA_NAMES
                 .keys
                 .map {
@@ -39,7 +40,7 @@ fun main(args: Array<String>) {
         )
 
         val parser = Parser(lr1DFA)
-        val cst = parser.parse(tokens)
+        parser.parse(tokens)
     } catch (e: Exception) {
         e.printStackTrace()
         println(e.message)

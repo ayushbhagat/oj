@@ -105,9 +105,9 @@ class Parser(
 
             if (rule != null) {
                 val children = rule.rhs.map({
-                    val node = cstNodeStack[cstNodeStack.size - 1]
-                    cstNodeStack.remove(node)
-                    stateStack.remove(stateStack[stateStack.size - 1])
+                    val node = cstNodeStack.last()
+                    cstNodeStack.removeAt(cstNodeStack.size - 1)
+                    stateStack.removeAt(stateStack.size - 1)
                     node
                 }).reversed().toMutableList()
 
@@ -115,7 +115,9 @@ class Parser(
                 cstNodeStack.add(node)
 
                 val nextState = dfa.getNextDFAState(stateStack.last(), rule.lhs)
-                nextState ?: throw ParseError("Invalid symbol detected: $symbol")
+                if (nextState == null) {
+                    throw ParseError("Invalid symbol detected: $symbol")
+                }
 
                 stateStack.add(nextState)
             } else {

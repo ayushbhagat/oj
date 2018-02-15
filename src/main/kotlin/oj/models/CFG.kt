@@ -173,8 +173,8 @@ data class CFG(
         val workList = mutableListOf(startState)
 
         while (!workList.isEmpty()) {
-            val currentState = workList[workList.size - 1]
-            workList.remove(currentState)
+            val currentState = workList.last()
+            workList.removeAt(workList.size - 1)
 
             if (currentState.data !is LR1DFAStateData) {
                 throw CFGError("currentState.data is not an instance of LR1DFAStateData")

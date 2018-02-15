@@ -160,11 +160,11 @@ data class NFA(
         // List of sets, where each set is a state.
         val workList = mutableListOf(startStateEpsilonClosure)
         while (!workList.isEmpty()) {
-            val currentStates = workList[workList.size - 1]
+            val currentStates = workList.last()
             val currentStatesCombined = currentStates.reduce { combinedStates, currentState ->
                 combinedStates.combine(stateDataHelper, currentState)
             }
-            workList.remove(currentStates)
+            workList.removeAt(workList.size - 1)
             for (a in alphabet) {
                 var newState: MutableSet<State> = mutableSetOf()
                 for (fromState in currentStates) {
@@ -241,8 +241,8 @@ data class NFA(
         val workList = mutableListOf(*states)
         val resultSet = mutableSetOf(*states)
         while (!workList.isEmpty()) {
-            val fromState = workList[workList.size - 1]
-            workList.remove(fromState)
+            val fromState = workList.last()
+            workList.removeAt(workList.size - 1)
             for (toState in transitionFn[fromState]?.get("").orEmpty()) {
                 if (!resultSet.contains(toState)) {
                     resultSet.add(toState)
