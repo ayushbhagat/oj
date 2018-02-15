@@ -12,7 +12,7 @@ import org.junit.runner.RunWith
 import kotlin.test.assertEquals
 
 @RunWith(JUnitPlatform::class)
-object SimpleCalculatorSpec: SubjectSpek<(String) -> CSTNode>({
+object ParserSpec : SubjectSpek<(String) -> CSTNode>({
     subject {
         var baseDfas = BASE_DFA_NAMES
             .keys

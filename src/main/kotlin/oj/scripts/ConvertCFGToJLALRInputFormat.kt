@@ -4,7 +4,7 @@ import oj.models.CFG
 import java.io.File
 
 fun main(args: Array<String>) {
-    val cfgName = "joos"
+    val cfgName = "joos-cornell"
     val cfg : CFG = CFG.deserialize("cfg/$cfgName.cfg")
 
     var str = ""
@@ -27,5 +27,5 @@ fun main(args: Array<String>) {
         })
     })
 
-    File("gen/$cfgName-jlalr-input-format.cfg").bufferedWriter().use { it.write(str) }
+    File("gen/joos-jlalr-input-format.cfg").bufferedWriter().use { it.write(str) }
 }

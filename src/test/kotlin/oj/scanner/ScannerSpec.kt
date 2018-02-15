@@ -12,7 +12,7 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 @RunWith(JUnitPlatform::class)
-object SimpleCalculatorSpec: SubjectSpek<Scanner>({
+object ScannerSpec : SubjectSpek<Scanner>({
     subject {
         var baseDfas = BASE_DFA_NAMES
                 .keys
