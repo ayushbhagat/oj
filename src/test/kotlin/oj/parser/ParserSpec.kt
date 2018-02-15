@@ -1,13 +1,10 @@
 package oj.parser
 
-import oj.Parser.CFGStateDataHelper
-import oj.Parser.CSTNode
-import oj.Parser.Parser
+import oj.models.CSTNode
 import oj.models.NFA
 import oj.scanner.BASE_DFA_NAMES
 import oj.scanner.SCANNER_DFA
 import oj.scanner.Scanner
-import org.jetbrains.spek.api.dsl.describe
 import org.jetbrains.spek.api.dsl.it
 import org.jetbrains.spek.subject.SubjectSpek
 import org.junit.platform.runner.JUnitPlatform
