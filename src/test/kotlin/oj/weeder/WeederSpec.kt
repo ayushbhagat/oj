@@ -294,6 +294,7 @@ object WeederSpec : SubjectSpek<(String) -> CSTNode>({
     it("should reject methods with this() calls") {
         val program = """
             |public class HelloWorld {
+            |   public HelloWorld() {}
             |   public void hi() {
             |       this();
             |   }
@@ -308,6 +309,7 @@ object WeederSpec : SubjectSpek<(String) -> CSTNode>({
     it("should reject methods with super() calls") {
         val program = """
             |public class HelloWorld extends B {
+            |   public HelloWorld() {}
             |   public void hi() {
             |       super();
             |   }
