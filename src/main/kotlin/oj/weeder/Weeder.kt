@@ -194,7 +194,6 @@ class ClassWeeder : CSTNodeVisitor() {
 
 class FieldWeeder : CSTNodeVisitor() {
     class FieldIsFinalError(fieldName: String): WeedError("Field \"$fieldName\" is declared final.")
-    class UnexpectedError(reason: String) : Exception(reason)
 
     override fun visitFieldDeclaration(node: CSTNode) {
         val modifiersNode = node.children[0]
@@ -202,22 +201,18 @@ class FieldWeeder : CSTNodeVisitor() {
         val isFinal = "final" in modifiers
 
         if (isFinal) {
-            val nodeContainingVariableName = node.children[2].children[0]
-            val identifierNodes = nodeContainingVariableName.getDescendants("IDENTIFIER")
-
-            if (identifierNodes.size != 1) {
-                throw UnexpectedError("Found more than one identifier when searching for field")
+            val child = node.children[2]
+            val fieldName = if (child.name == "IDENTIFIER") {
+                child.lexeme
+            } else {
+                val identifierNode = child.children[0]
+                identifierNode.lexeme
             }
-
-            val identifierNode = identifierNodes.first()
-            val fieldName = identifierNode.lexeme
 
             throw FieldIsFinalError(fieldName)
         }
     }
 }
-
-
 
 class Weeder {
     companion object {
