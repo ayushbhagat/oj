@@ -31,7 +31,7 @@ fun main(args: Array<String>) {
                 "gen/$SCANNER_DFA.dfa",
                 NFA.EmptyStateDataHelper(),
                 oj.scanner.ALPHABET,
-                "").toDFA()
+                "")
         val scanner = Scanner(scannerDfa, baseDfas)
         val tokens = scanner.tokenize(inputFileString)
 

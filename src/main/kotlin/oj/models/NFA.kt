@@ -308,30 +308,4 @@ data class NFA(
     }
 
     data class EmptyStateData(val data: String = "") : StateData
-
-    // TODO(ayushbhagat): Move to CFG.kt. Also convert each rule string to Rule.
-    class RulesHelper() : StateDataHelper {
-        override fun deserialize(line: String): StateData {
-            return RulesStateData(line.split("  ").toSet())
-        }
-
-        override fun serialize(stateData: StateData): String {
-            return if (stateData is RulesStateData)
-                stateData.rules.joinToString("  ")
-            else ""
-        }
-
-        override fun combine(vararg stateDataList: StateData): StateData {
-            return stateDataList.fold(RulesStateData(setOf()), { combinedStateData, stateData ->
-                if (stateData is RulesStateData) {
-                    RulesStateData(combinedStateData.rules.union(stateData.rules))
-                } else {
-                    combinedStateData
-                }
-            })
-        }
-    }
-
-    // TODO(ayushbhagat): Move to CFG.kt.
-    data class RulesStateData(val rules: Set<String>) : StateData
 }
