@@ -70,7 +70,6 @@ class Scanner(private var dfa: NFA, private val baseDfas: Set<NFA>) {
                     val lexeme =
                             code.substring(lexemeStartIndex, lastFinalStateIndex + 1)
                     val token = Token(getTokenType(lastFinalState, lexeme), lexeme)
-                    println(token)
                     tokens.add(token)
                     index = lastFinalStateIndex
                     currentState = dfa.startState

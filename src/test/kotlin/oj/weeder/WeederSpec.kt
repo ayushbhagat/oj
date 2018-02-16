@@ -58,7 +58,7 @@ object WeederSpec : SubjectSpek<(String) -> CSTNode>({
         val program = """
             |public class HelloWorld {
             |   public HelloWorld() {}
-            |   public static void main(String args[]) {
+            |   public static void main(String[] args) {
             |       System.out.println("Hello World!");
             |   }
             |}
@@ -72,7 +72,7 @@ object WeederSpec : SubjectSpek<(String) -> CSTNode>({
         val program = """
             |public abstract final class HelloWorld {
             |   public HelloWorld() {}
-            |   public static void main(String args[]) {
+            |   public static void main(String[] args) {
             |   }
             |}
         """.trimMargin()
@@ -238,7 +238,7 @@ object WeederSpec : SubjectSpek<(String) -> CSTNode>({
         val program = """
             |public class HelloWorld {
             |   public HelloWorld() {}
-            |   protected final int x[] = 1;
+            |   protected final int[] x = 1;
             |}
         """.trimMargin()
 
@@ -321,6 +321,20 @@ object WeederSpec : SubjectSpek<(String) -> CSTNode>({
         }
     }
 
+    it("should correctly parse methods with array declarations") {
+        val program = """
+            |public class HelloWorld extends B {
+            |   public HelloWorld() {}
+            |   public int[] mCount;
+            |   public void hi() {
+            |       int[] count = new int[10];
+            |   }
+            |}
+        """.trimMargin()
+        val tree = subject(program)
+        assertEquals("CompilationUnit", tree.name)
+    }
+
     it("should parse integer literal -(2^31) with space between sign and number") {
         val program = """
             |public class HelloWorld {
@@ -331,7 +345,35 @@ object WeederSpec : SubjectSpek<(String) -> CSTNode>({
             |}
         """.trimMargin()
 
-        val tree : CSTNode = subject(program)
+        val tree = subject(program)
+        assertEquals("CompilationUnit", tree.name)
+    }
+
+    it("should reject methods with multidimensional arrays") {
+        val program = """
+            |public class HelloWorld extends B {
+            |   public int[] mCount;
+            |   public void hi() {
+            |       int[][] count = new int[10][10];
+            |   }
+            |}
+        """.trimMargin()
+
+        assertFailsWith(ParseError::class) {
+            subject(program)
+        }
+    }
+
+    it("should correctly parse methods with array declarations as formal parameters") {
+        val program = """
+            |public class HelloWorld extends B {
+            |   public HelloWorld() {}
+            |   public void hi(int[] count) {
+            |       int[] count2 = count;
+            |   }
+            |}
+        """.trimMargin()
+        val tree = subject(program)
         assertEquals("CompilationUnit", tree.name)
     }
 
@@ -364,6 +406,37 @@ object WeederSpec : SubjectSpek<(String) -> CSTNode>({
         }
     }
 
+
+    it("should reject methods with multi-dimensional array declarations as formal parameters") {
+        val program = """
+            |public class HelloWorld extends B {
+            |   public HelloWorld() {}
+            |   public void hi(int[][] count) {
+            |       int[][] count2 = count;
+            |   }
+            |}
+        """.trimMargin()
+
+        assertFailsWith(ParseError::class) {
+            val tree = subject(program)
+            assertEquals("CompilationUnit", tree.name)
+        }
+    }
+
+    it("should reject methods with multidimensional arrays") {
+        val program = """
+            |public class HelloWorld extends B {
+            |   public HelloWorld() {}
+            |   public int[][] mCount;
+            |   public void hi() {}
+            |}
+        """.trimMargin()
+
+        assertFailsWith(ParseError::class) {
+            subject(program)
+        }
+    }
+
     it("should not parse integer literals < -(2^31)") {
         val program = """
             |public class HelloWorld {
@@ -389,6 +462,21 @@ object WeederSpec : SubjectSpek<(String) -> CSTNode>({
             |}
         """.trimMargin()
         assertFailsWith(IntegerRangeWeeder.IntLessThanLowerBoundError::class) {
+            subject(program)
+        }
+    }
+
+
+    it("should reject methods with multidimensional arrays") {
+        val program = """
+            |public class HelloWorld extends B {
+            |   public HelloWorld() {}
+            |   public int[][] mCount = new int[20][30];
+            |   public void hi() {}
+            |}
+        """.trimMargin()
+
+        assertFailsWith(ParseError::class) {
             subject(program)
         }
     }
