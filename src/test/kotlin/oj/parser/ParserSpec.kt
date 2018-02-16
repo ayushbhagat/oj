@@ -5,11 +5,12 @@ import oj.models.NFA
 import oj.scanner.BASE_DFA_NAMES
 import oj.scanner.SCANNER_DFA
 import oj.scanner.Scanner
-import org.jetbrains.spek.api.dsl.it
+import org.jetbrains.spek.api.dsl.*
 import org.jetbrains.spek.subject.SubjectSpek
 import org.junit.platform.runner.JUnitPlatform
 import org.junit.runner.RunWith
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 
 @RunWith(JUnitPlatform::class)
 object ParserSpec : SubjectSpek<(String) -> CSTNode>({
@@ -60,5 +61,17 @@ object ParserSpec : SubjectSpek<(String) -> CSTNode>({
 
         val tree : CSTNode = subject(program)
         assertEquals("CompilationUnit", tree.name)
+    }
+
+    it("should not parse classes with package-private constructors") {
+        val program = """
+            |public class HelloWorld {
+            |   HelloWorld() {}
+            |}
+        """.trimMargin()
+
+        assertFailsWith(ParseError::class) {
+            subject(program)
+        }
     }
 })

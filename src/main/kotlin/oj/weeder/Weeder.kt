@@ -19,6 +19,9 @@ class GeneralModifiersWeeder : CSTNodeVisitor() {
             throw AbstractAndFinalInModifiersError()
         }
 
+        // TODO: This isn't true of interfaces
+        // Interfaces default to public
+
         val isPublic = "public" in modifiers
         val isProtected = "protected" in modifiers
 
@@ -121,6 +124,99 @@ class MethodModifiersWeeder : CSTNodeVisitor() {
     }
 }
 
+/**
+ * Rule:
+ *  - An interface method cannot be static, final, or native.
+ */
+
+class InterfaceWeeder : CSTNodeVisitor() {
+    class InterfaceMethodIsStaticError(methodName: String) : WeedError("Interface method $methodName is static, which is not allowed.")
+    class InterfaceMethodIsFinalError(methodName: String) : WeedError("Interface method $methodName is final, which is not allowed.")
+    class InterfaceMethodIsNativeError(methodName: String) : WeedError("Interface method $methodName is native, which is not allowed.")
+
+    override fun visitInterfaceMemberDeclaration(node: CSTNode) {
+        val abstractMethodDeclarationNode = node.children[0]
+        val methodHeaderNode = abstractMethodDeclarationNode.children[0]
+        val modifiersNode = methodHeaderNode.children[0]
+
+        val modifiers = modifiersNode.getDescendants("Modifier").map({ it.children[0].name }).toSet()
+
+        val isStatic = "static" in modifiers
+        val isFinal = "final" in modifiers
+        val isNative = "native" in modifiers
+
+        if (isStatic) {
+            val methodDeclaratorNode = methodHeaderNode.children[2]
+            val methodIdentifierNode = methodDeclaratorNode.children[0]
+            val methodName = methodIdentifierNode.lexeme
+
+            throw InterfaceMethodIsStaticError(methodName)
+        }
+
+        if (isFinal) {
+            val methodDeclaratorNode = methodHeaderNode.children[2]
+            val methodIdentifierNode = methodDeclaratorNode.children[0]
+            val methodName = methodIdentifierNode.lexeme
+
+            throw InterfaceMethodIsFinalError(methodName)
+        }
+
+        if (isNative) {
+            val methodDeclaratorNode = methodHeaderNode.children[2]
+            val methodIdentifierNode = methodDeclaratorNode.children[0]
+            val methodName = methodIdentifierNode.lexeme
+
+            throw InterfaceMethodIsNativeError(methodName)
+        }
+    }
+}
+
+/**
+ * Rule:
+ *  - Every class must contain at least one explicit constructor.
+ */
+class ClassWeeder : CSTNodeVisitor() {
+    class NoConstructorFoundInClass(className: String) : WeedError("Class \"$className\" must have constructor; found none.")
+
+    override fun visitClassDeclaration(node: CSTNode) {
+        val className = node.children[2].lexeme
+        val constructorDeclarationNodes = node.getDescendants("ConstructorDeclaration")
+        if (constructorDeclarationNodes.isEmpty()) {
+            throw NoConstructorFoundInClass(className)
+        }
+    }
+}
+
+/**
+ * Rule:
+ *  - No field can be final
+ */
+
+class FieldWeeder : CSTNodeVisitor() {
+    class FieldIsFinalError(fieldName: String): WeedError("Field \"$fieldName\" is declared final.")
+    class UnexpectedError(reason: String) : Exception(reason)
+
+    override fun visitFieldDeclaration(node: CSTNode) {
+        val modifiersNode = node.children[0]
+        val modifiers = modifiersNode.getDescendants("Modifier").map({ it.children[0].name }).toSet()
+        val isFinal = "final" in modifiers
+
+        if (isFinal) {
+            val nodeContainingVariableName = node.children[2].children[0]
+            val identifierNodes = nodeContainingVariableName.getDescendants("IDENTIFIER")
+
+            if (identifierNodes.size != 1) {
+                throw UnexpectedError("Found more than one identifier when searching for field")
+            }
+
+            val identifierNode = identifierNodes.first()
+            val fieldName = identifierNode.lexeme
+
+            throw FieldIsFinalError(fieldName)
+        }
+    }
+}
+
 class IntegerRangeWeeder : CSTNodeVisitor() {
     class IntLessThanLowerBoundError(num: String) : WeedError("Integer < " +
             "lower bound: $num")
@@ -172,9 +268,12 @@ class IntegerRangeWeeder : CSTNodeVisitor() {
 class Weeder {
     companion object {
         fun weed(root: CSTNode) : CSTNode {
+            ClassWeeder().visit(root)
             GeneralModifiersWeeder().visit(root)
             MethodIsAbstractOrNativeIFFItHasNoMethodBodyWeeder().visit(root)
+            InterfaceWeeder().visit(root)
             MethodModifiersWeeder().visit(root)
+            FieldWeeder().visit(root)
             IntegerRangeWeeder().visit(root)
 
             /**
