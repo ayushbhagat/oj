@@ -65,12 +65,13 @@ class Scanner(private var dfa: NFA, private val baseDfas: Set<NFA>) {
             // If DFA is in error state or the last input character was read.
             if (currentState == null || index >= code.length - 1) {
                 if (lastFinalState == null) {
-                    throw ScannerError()
+                    throw ScannerError("Haven't seen a final state when going to the error state")
                 } else {
                     val lexeme =
                             code.substring(lexemeStartIndex, lastFinalStateIndex + 1)
-                    tokens.add(Token(getTokenType(lastFinalState, lexeme), lexeme))
-                    println(tokens[tokens.size - 1])
+                    val token = Token(getTokenType(lastFinalState, lexeme), lexeme)
+                    println(token)
+                    tokens.add(token)
                     index = lastFinalStateIndex
                     currentState = dfa.startState
                     lexemeStartIndex = lastFinalStateIndex + 1
@@ -90,7 +91,7 @@ class Scanner(private var dfa: NFA, private val baseDfas: Set<NFA>) {
      */
     private fun getTokenType(finalState: NFA.State?, currentLexeme: String): TokenType {
         if (finalState == null) {
-            throw ScannerError()
+            throw ScannerError("Final state is null")
         }
         // Note that this is kind of a hack because it assumes that state names are joined using
         // '_'.
@@ -116,7 +117,7 @@ class Scanner(private var dfa: NFA, private val baseDfas: Set<NFA>) {
                 }
             }
             BASE_DFA_NAMES[dfaName] != null -> BASE_DFA_NAMES[dfaName]!!
-            else -> throw ScannerError()
+            else -> throw ScannerError("Invalid token type")
         }
     }
 }

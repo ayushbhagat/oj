@@ -174,4 +174,89 @@ object WeederSpec : SubjectSpek<(String) -> CSTNode>({
             subject(program)
         }
     }
+
+    it("should parse integer literal -(2^31) with space between sign and number") {
+        val program = """
+            |public class HelloWorld {
+            |   public HelloWorld() {}
+            |   public void main(String[] args) {
+            |       int a = - 2147483648;
+            |   }
+            |}
+        """.trimMargin()
+
+        val tree : CSTNode = subject(program)
+        assertEquals("CompilationUnit", tree.name)
+    }
+
+    it("should parse integer literal -(2^31) with comments between sign and number") {
+        val program = """
+            |public class HelloWorld {
+            |   public HelloWorld() {}
+            |   public void main(String[] args) {
+            |       int a = - /**/ /**/ 2147483648;
+            |   }
+            |}
+        """.trimMargin()
+
+        val tree : CSTNode = subject(program)
+        assertEquals("CompilationUnit", tree.name)
+    }
+
+    it("should not parse integer literals > 2^31 - 1") {
+        val program = """
+            |public class HelloWorld {
+            |   public void main(String[] args) {
+            |       int a = 2147483648;
+            |   }
+            |}
+        """.trimMargin()
+
+        assertFailsWith(IntegerRangeWeeder.IntGreaterThanUpperBoundError::class) {
+            subject(program)
+        }
+    }
+
+    it("should not parse integer literals < -(2^31)") {
+        val program = """
+            |public class HelloWorld {
+            |   public void main(String[] args) {
+            |       int a = -2147483649;
+            |   }
+            |}
+        """.trimMargin()
+
+        assertFailsWith(IntegerRangeWeeder.IntLessThanLowerBoundError::class) {
+            subject(program)
+        }
+    }
+
+    it("should not parse integer literals < -(2^31) with space between sign and " +
+            "number") {
+        val program = """
+            |public class HelloWorld {
+            |   public void main(String[] args) {
+            |       int a = - 2147483649;
+            |   }
+            |}
+        """.trimMargin()
+
+        assertFailsWith(IntegerRangeWeeder.IntLessThanLowerBoundError::class) {
+            subject(program)
+        }
+    }
+
+    it("should not parse integer literals out of bounds in () ") {
+        val program = """
+            |public class HelloWorld {
+            |   public void main(String[] args) {
+            |       int a = -(2147483648);
+            |   }
+            |}
+        """.trimMargin()
+
+        assertFailsWith(IntegerRangeWeeder.IntGreaterThanUpperBoundError::class) {
+            subject(program)
+        }
+    }
 })
