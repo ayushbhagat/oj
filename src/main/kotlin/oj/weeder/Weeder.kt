@@ -190,10 +190,6 @@ class ClassWeeder : CSTNodeVisitor() {
 /**
  * Rule:
  *  - No field can be final
- *
- * All Local Variable Declarations must have an initializer.
- * There can be no final fields.
- * So all final variable declarations (field or not) have an initializer.
  */
 
 class FieldWeeder : CSTNodeVisitor() {
@@ -221,10 +217,7 @@ class FieldWeeder : CSTNodeVisitor() {
     }
 }
 
-/**
- * Rule:
- *  - A method or constructor must not contain explicit this() or super() calls.
- */
+
 
 class Weeder {
     companion object {

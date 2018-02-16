@@ -3,6 +3,7 @@ package oj.weeder
 import oj.models.CSTNode
 import oj.models.NFA
 import oj.parser.CFGStateDataHelper
+import oj.parser.ParseError
 import oj.parser.Parser
 import oj.scanner.BASE_DFA_NAMES
 import oj.scanner.SCANNER_DFA
@@ -255,6 +256,66 @@ object WeederSpec : SubjectSpek<(String) -> CSTNode>({
         """.trimMargin()
 
         assertFailsWith(FieldWeeder.FieldIsFinalError::class) {
+            subject(program)
+        }
+    }
+
+    it("should reject constructors with this() calls") {
+        val program = """
+            |public class HelloWorld {
+            |   public HelloWorld() {
+            |       this("bob");
+            |   }
+            |
+            |   public HelloWorld(String name) {
+            |       System.out.println(name);
+            |   }
+            |}
+        """.trimMargin()
+
+        assertFailsWith(ParseError::class) {
+            subject(program)
+        }
+    }
+
+    it("should reject constructors with super() calls") {
+        val program = """
+            |public class HelloWorld extends B {
+            |   public HelloWorld() {
+            |       super("bob");
+            |   }
+            |}
+        """.trimMargin()
+
+        assertFailsWith(ParseError::class) {
+            subject(program)
+        }
+    }
+
+    it("should reject methods with this() calls") {
+        val program = """
+            |public class HelloWorld {
+            |   public void hi() {
+            |       this();
+            |   }
+            |}
+        """.trimMargin()
+
+        assertFailsWith(ParseError::class) {
+            subject(program)
+        }
+    }
+
+    it("should reject methods with super() calls") {
+        val program = """
+            |public class HelloWorld extends B {
+            |   public void hi() {
+            |       super();
+            |   }
+            |}
+        """.trimMargin()
+
+        assertFailsWith(ParseError::class) {
             subject(program)
         }
     }
