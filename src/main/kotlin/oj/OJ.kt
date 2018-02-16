@@ -8,6 +8,7 @@ import oj.weeder.Weeder
 import java.io.File
 
 class InvalidClassOrInterfaceNameError(message: String) : Exception(message)
+class InvalidFileNameError(message: String) : Exception(message)
 
 fun main(args: Array<String>) {
     if (args.isEmpty()) {
@@ -50,10 +51,16 @@ fun main(args: Array<String>) {
             .getDescendants({ it.name == "ClassDeclaration" || it.name == "InterfaceDeclaration" })
             .forEach({ node ->
                 val classOrInterfaceName = node.children[2].lexeme
-                val expectedFileName = "$classOrInterfaceName.java"
-                val expectedClassName = filename.split("/").last().replace(".java", "")
+                val basename = filename.split("/").last()
+                val expectedExtension = ".java"
 
-                if (!filename.endsWith(expectedFileName)) {
+                if (!basename.endsWith(expectedExtension)) {
+                    throw InvalidFileNameError("File extension is invalid: \"$expectedExtension\"")
+                }
+
+                val expectedClassName = basename.substring(0, basename.length - expectedExtension.length)
+
+                if (classOrInterfaceName != expectedClassName) {
                     throw InvalidClassOrInterfaceNameError(
                         "Expected ${node.name} \"$classOrInterfaceName\" to be named \"$expectedClassName\"."
                     )
