@@ -4,25 +4,6 @@ import oj.models.*
 import oj.models.NFA.StateData
 import oj.models.NFA.StateDataHelper
 
-data class Rule(val lhs: String, val rhs: List<String>) {
-    override fun toString() : String {
-        if (rhs.isEmpty()) {
-            return lhs
-        }
-
-        return "$lhs ${rhs.joinToString(" ")}"
-    }
-
-    companion object {
-        fun deserialize(line: String): Rule {
-            val sides = line.split(" ")
-            val lhs = sides.first()
-            val rhs = sides.drop(1)
-            return Rule(lhs, rhs)
-        }
-    }
-}
-
 data class CFGStateData(val items: MutableMap<String, Rule> = mutableMapOf()) : StateData
 
 class CFGStateDataHelperException(reason: String): Exception(reason)
@@ -72,8 +53,6 @@ class CFGStateDataHelper : StateDataHelper {
         throw CFGStateDataHelperException("Tried to execute combine()")
     }
 }
-
-class ParseError(reason: String): Exception(reason)
 
 class Parser(
     private val dfa: NFA
