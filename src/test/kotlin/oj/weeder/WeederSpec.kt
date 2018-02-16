@@ -56,6 +56,7 @@ object WeederSpec : SubjectSpek<(String) -> CSTNode>({
     it("should parse Java Hello World") {
         val program = """
             |public class HelloWorld {
+            |   public HelloWorld() {}
             |   public static void main(String args[]) {
             |       System.out.println("Hello World!");
             |   }
@@ -69,6 +70,7 @@ object WeederSpec : SubjectSpek<(String) -> CSTNode>({
     it("should reject abstract final on class declarations") {
         val program = """
             |public abstract final class HelloWorld {
+            |   public HelloWorld() {}
             |   public static void main(String args[]) {
             |   }
             |}
@@ -82,6 +84,7 @@ object WeederSpec : SubjectSpek<(String) -> CSTNode>({
     it("should reject abstract methods with bodies") {
         val program = """
             |public abstract class HelloWorld {
+            |   public HelloWorld() {}
             |   public abstract void foo() {}
             |}
         """.trimMargin()
@@ -94,6 +97,7 @@ object WeederSpec : SubjectSpek<(String) -> CSTNode>({
     it("should reject native methods with bodies") {
         val program = """
             |public class HelloWorld {
+            |   public HelloWorld() {}
             |   public native void foo() {}
             |}
         """.trimMargin()
@@ -106,6 +110,7 @@ object WeederSpec : SubjectSpek<(String) -> CSTNode>({
     it("should reject methods without bodies that are neither abstract nor native") {
         val program = """
             |public class HelloWorld {
+            |   public HelloWorld() {}
             |   public void foo();
             |}
         """.trimMargin()
@@ -118,6 +123,7 @@ object WeederSpec : SubjectSpek<(String) -> CSTNode>({
     it("should reject abstract methods that are final") {
         val program = """
             |public abstract class HelloWorld {
+            |   public HelloWorld() {}
             |   public abstract final void foo();
             |}
         """.trimMargin()
@@ -130,6 +136,7 @@ object WeederSpec : SubjectSpek<(String) -> CSTNode>({
     it("should reject abstract methods that are both static and final") {
         val program = """
             |public abstract class HelloWorld {
+            |   public HelloWorld() {}
             |   public abstract static final void foo();
             |}
         """.trimMargin()
@@ -142,6 +149,7 @@ object WeederSpec : SubjectSpek<(String) -> CSTNode>({
     it("should reject abstract methods that are static") {
         val program = """
             |public abstract class HelloWorld {
+            |   public HelloWorld() {}
             |   public abstract static void foo();
             |}
         """.trimMargin()
@@ -154,6 +162,7 @@ object WeederSpec : SubjectSpek<(String) -> CSTNode>({
     it("should reject static methods that are final") {
         val program = """
             |public class HelloWorld {
+            |   public HelloWorld() {}
             |   public static final void foo() {}
             |}
         """.trimMargin()
@@ -166,11 +175,86 @@ object WeederSpec : SubjectSpek<(String) -> CSTNode>({
     it("should reject native methods that are not static") {
         val program = """
             |public class HelloWorld {
+            |   public HelloWorld() {}
             |   public native void foo();
             |}
         """.trimMargin()
 
         assertFailsWith(MethodModifiersWeeder.NativeMethodIsNotStaticError::class) {
+            subject(program)
+        }
+    }
+
+    it("should reject native methods on interfaces") {
+        val program = """
+            |public interface HelloWorld {
+            |   public native void foo();
+            |}
+        """.trimMargin()
+
+        assertFailsWith(InterfaceWeeder.InterfaceMethodIsNativeError::class) {
+            subject(program)
+        }
+    }
+
+    it("should reject final methods on interfaces") {
+        val program = """
+            |public interface HelloWorld {
+            |   public final void foo();
+            |}
+        """.trimMargin()
+
+        assertFailsWith(InterfaceWeeder.InterfaceMethodIsFinalError::class) {
+            subject(program)
+        }
+    }
+
+    it("should reject static methods on interfaces") {
+        val program = """
+            |public interface HelloWorld {
+            |   public static void foo();
+            |}
+        """.trimMargin()
+
+        assertFailsWith(InterfaceWeeder.InterfaceMethodIsStaticError::class) {
+            subject(program)
+        }
+    }
+
+    it("should reject classes that don't have an explicit constructor method") {
+        val program = """
+            |public class HelloWorld {
+            |   public native void foo();
+            |}
+        """.trimMargin()
+
+        assertFailsWith(ClassWeeder.NoConstructorFoundInClass::class) {
+            subject(program)
+        }
+    }
+
+    it("should reject classes with final fields") {
+        val program = """
+            |public class HelloWorld {
+            |   public HelloWorld() {}
+            |   protected final int x[] = 1;
+            |}
+        """.trimMargin()
+
+        assertFailsWith(FieldWeeder.FieldIsFinalError::class) {
+            subject(program)
+        }
+    }
+
+    it("should reject classes with final fields without initializers") {
+        val program = """
+            |public class HelloWorld {
+            |   public HelloWorld() {}
+            |   protected final int x /* = 0 */;
+            |}
+        """.trimMargin()
+
+        assertFailsWith(FieldWeeder.FieldIsFinalError::class) {
             subject(program)
         }
     }
