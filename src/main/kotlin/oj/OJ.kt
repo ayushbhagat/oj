@@ -14,10 +14,10 @@ fun main(args: Array<String>) {
         System.exit(42)
     }
     val filename = args[0]
+    //val filename = "test/programs/HelloWorld.java"
 
     try {
         var inputFileString = File(filename).inputStream().bufferedReader().use { it.readText() }
-        //var inputFileString = File("test/programs/HelloWorld.java").inputStream().bufferedReader().use{ it.readText() }
         var baseDfas = BASE_DFA_NAMES
                 .keys
                 .map {

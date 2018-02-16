@@ -647,14 +647,14 @@ object ScannerSpec : SubjectSpek<Scanner>({
                 assertEquals(TokenType.INTEGER, nonWhitespaceTokens[3].type)
             }
 
-            it("should tokenize integer literals >= 2^31") {
-                val integer = "214748364800000"
-                val tokens = subject.tokenize("int ab = 2 * ($integer + 1)")
+            it("should tokenize integer literals == 2^31") {
+                val integer = "2147483648"
+                val tokens = subject.tokenize("$integer")
                 val nonWhitespaceTokens = tokens.filter({ it.type != TokenType.WHITESPACE })
 
-                assertEquals(10, nonWhitespaceTokens.size)
-                assertEquals(integer, nonWhitespaceTokens[6].lexeme)
-                assertEquals(TokenType.INTEGER, nonWhitespaceTokens[6].type)
+                assertEquals(1, nonWhitespaceTokens.size)
+                assertEquals(integer, nonWhitespaceTokens[0].lexeme)
+                assertEquals(TokenType.INTEGER, nonWhitespaceTokens[0].type)
             }
 
         }

@@ -1,11 +1,8 @@
 package oj.parser
 
-import oj.models.NFA
+import oj.models.*
 import oj.models.NFA.StateData
 import oj.models.NFA.StateDataHelper
-import oj.models.Token
-import oj.models.TokenType
-import oj.models.CSTNode
 
 data class Rule(val lhs: String, val rhs: List<String>) {
     override fun toString() : String {
@@ -91,8 +88,7 @@ class Parser(
             TokenType.NULL
         )
 
-        val ignoredTokenTypes = setOf(TokenType.WHITESPACE, TokenType.COMMENT)
-        val relevantTokens = tokens.filter({ token -> !ignoredTokenTypes.contains(token.type)})
+        val relevantTokens = tokens.filter({ token -> !IGNORED_TOKEN_TYPES.contains(token.type)})
 
         val input: MutableList<String> = mutableListOf("BOF")
         input.addAll(relevantTokens.map({token ->

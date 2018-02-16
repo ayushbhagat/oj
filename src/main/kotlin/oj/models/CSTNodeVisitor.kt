@@ -116,6 +116,7 @@ open class CSTNodeVisitor {
             "LeftHandSide" -> visitLeftHandSide(node)
             "AssignmentOperator" -> visitAssignmentOperator(node)
             "Expression" -> visitExpression(node)
+            "INTEGER" -> visitInteger(node)
             else -> {
                 node.children.forEach({ child -> visit(child) })
             }
@@ -563,6 +564,10 @@ open class CSTNodeVisitor {
     }
 
     open fun visitExpression(node: CSTNode) {
+        node.children.forEach({ child -> visit(child) })
+    }
+
+    open fun visitInteger(node: CSTNode) {
         node.children.forEach({ child -> visit(child) })
     }
 }
