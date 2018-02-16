@@ -234,6 +234,20 @@ object WeederSpec : SubjectSpek<(String) -> CSTNode>({
         }
     }
 
+    it ("should not allow constructor name to be different from class name") {
+        val program = """
+            |public class HelloWorld {
+            |   public HelloWorld() {}
+            |   public HelloWorld2() {}
+            |   public void main(String[] args) {}
+            |}
+        """.trimMargin()
+
+        assertFailsWith(ClassWeeder.ClassNameAndConstructorNameMismatch::class) {
+            subject(program)
+        }
+    }
+
     it("should reject classes with final fields") {
         val program = """
             |public class HelloWorld {
@@ -495,4 +509,149 @@ object WeederSpec : SubjectSpek<(String) -> CSTNode>({
             subject(program)
         }
     }
+
+    it("should allow basic type as a cast") {
+        val program = """
+            |public class HelloWorld {
+            |   public HelloWorld() {}
+            |   public void main(String[] args) {
+            |       int a = (int) 2;
+            |   }
+            |}
+        """.trimMargin()
+
+        val tree: CSTNode = subject(program)
+        assertEquals("CompilationUnit", tree.name)
+    }
+
+    it("should allow basic type array as a cast") {
+        val program = """
+            |public class HelloWorld {
+            |   public HelloWorld() {}
+            |   public void main(String[] args) {
+            |       int a = (int []) 2;
+            |   }
+            |}
+        """.trimMargin()
+
+        val tree: CSTNode = subject(program)
+        assertEquals("CompilationUnit", tree.name)
+    }
+
+    it("should allow name as a cast") {
+        val program = """
+            |public class HelloWorld {
+            |   public HelloWorld() {}
+            |   public void main(String[] args) {
+            |       int a = (A) 2;
+            |   }
+            |}
+        """.trimMargin()
+
+        val tree: CSTNode = subject(program)
+        assertEquals("CompilationUnit", tree.name)
+    }
+
+    it("should allow name array as a cast") {
+        val program = """
+            |public class HelloWorld {
+            |   public HelloWorld() {}
+            |   public void main(String[] args) {
+            |       int a = (A[]) 2;
+            |   }
+            |}
+        """.trimMargin()
+
+        val tree: CSTNode = subject(program)
+        assertEquals("CompilationUnit", tree.name)
+    }
+
+    it("should allow qualified name as a cast") {
+        val program = """
+            |public class HelloWorld {
+            |   public HelloWorld() {}
+            |   public void main(String[] args) {
+            |       int a = (A.b.c) 2;
+            |   }
+            |}
+        """.trimMargin()
+
+        val tree: CSTNode = subject(program)
+        assertEquals("CompilationUnit", tree.name)
+    }
+
+    it("should allow qualified name array as a cast") {
+        val program = """
+            |public class HelloWorld {
+            |   public HelloWorld() {}
+            |   public void main(String[] args) {
+            |       int a = (A.b.c[]) 2;
+            |   }
+            |}
+        """.trimMargin()
+
+        val tree: CSTNode = subject(program)
+        assertEquals("CompilationUnit", tree.name)
+    }
+
+    it("should not allow additive expression as a cast") {
+        val program = """
+            |public class HelloWorld {
+            |   public HelloWorld() {}
+            |   public void main(String[] args) {
+            |       int a = (1 + 2) a;
+            |   }
+            |}
+        """.trimMargin()
+
+        assertFailsWith(CastExpressionWeeder.CastExpressionError::class) {
+            subject(program)
+        }
+    }
+
+    it("should not allow assignment as a cast") {
+        val program = """
+            |public class HelloWorld {
+            |   public HelloWorld() {}
+            |   public void main(String[] args) {
+            |       int a = (a = b) 2;
+            |   }
+            |}
+        """.trimMargin()
+
+        assertFailsWith(CastExpressionWeeder.CastExpressionError::class) {
+            subject(program)
+        }
+    }
+
+    it("should not allow cast within a cast") {
+        val program = """
+            |public class HelloWorld {
+            |   public HelloWorld() {}
+            |   public void main(String[] args) {
+            |       int a = ((int) 2) 2;
+            |   }
+            |}
+        """.trimMargin()
+
+        assertFailsWith(CastExpressionWeeder.CastExpressionError::class) {
+            subject(program)
+        }
+    }
+
+    it("should not allow double parenthesis cast") {
+        val program = """
+            |public class HelloWorld {
+            |   public HelloWorld() {}
+            |   public void main(String[] args) {
+            |       int a = ((1)) 2;
+            |   }
+            |}
+        """.trimMargin()
+
+        assertFailsWith(CastExpressionWeeder.CastExpressionError::class) {
+            subject(program)
+        }
+    }
+
 })

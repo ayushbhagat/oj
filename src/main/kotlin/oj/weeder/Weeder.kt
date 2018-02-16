@@ -177,12 +177,24 @@ class InterfaceWeeder : CSTNodeVisitor() {
  */
 class ClassWeeder : CSTNodeVisitor() {
     class NoConstructorFoundInClass(className: String) : WeedError("Class \"$className\" must have constructor; found none.")
+    class ClassNameAndConstructorNameMismatch(className: String, constructorName: String) :
+            WeedError("Class name \"$className\" does not match constructor name " +
+                    "\"$constructorName\"")
 
     override fun visitClassDeclaration(node: CSTNode) {
         val className = node.children[2].lexeme
         val constructorDeclarationNodes = node.getDescendants("ConstructorDeclaration")
         if (constructorDeclarationNodes.isEmpty()) {
             throw NoConstructorFoundInClass(className)
+        }
+        constructorDeclarationNodes.forEach {
+            val constructorDeclarator = it.children[1]
+            val simpleName = constructorDeclarator.children[0]
+            val identifier = simpleName.children[0]
+            val constructorName = identifier.lexeme
+            if (constructorName != className) {
+                throw ClassNameAndConstructorNameMismatch(className, constructorName)
+            }
         }
     }
 }
@@ -262,6 +274,24 @@ class IntegerRangeWeeder : CSTNodeVisitor() {
     }
 }
 
+class CastExpressionWeeder : CSTNodeVisitor() {
+    class CastExpressionError(reason: String) : WeedError("Illegal cast expression: $reason")
+
+    override fun visitCastExpression(node: CSTNode) {
+        val expression = node.children[1]
+        if (expression.name == "Expression") {
+            var curChild = expression
+            while (curChild.name != "Name") {
+                if (curChild.children.size != 1) {
+                    throw CastExpressionError(
+                            "Size is not 1, current size: ${curChild.children.size}")
+                }
+                curChild = curChild.children[0]
+            }
+        }
+    }
+}
+
 class Weeder {
     companion object {
         fun weed(root: CSTNode) : CSTNode {
@@ -272,6 +302,7 @@ class Weeder {
             MethodModifiersWeeder().visit(root)
             FieldWeeder().visit(root)
             IntegerRangeWeeder().visit(root)
+            CastExpressionWeeder().visit(root)
 
             /**
              * TODO: Do we satisfy the following rule?
