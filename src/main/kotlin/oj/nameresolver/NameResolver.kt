@@ -173,6 +173,47 @@ class NameResolutionVisitor(private val packages: Map<String, Set<CSTNode>>) : C
             super.visitRelationalExpression(node)
         }
     }
+
+    /**
+     * ExpressionName:
+     * As the array reference expression in an array access expression (§15.13)
+     */
+    override fun visitArrayAccess(node: CSTNode) {
+        try {
+            val nameNode = node.getChild("Name")
+
+        } catch (ex: FoundNoChild) {
+            super.visitArrayAccess(node)
+        }
+    }
+
+    /**
+     * ExpressionName:
+     * As a PostfixExpression (§15.14)
+     *
+     * Note: We merged PostfixExpression into UnaryExpressionNotPlusMinus
+     */
+    override fun visitUnaryExpressionNotPlusMinus(node: CSTNode) {
+        try {
+            val nameNode = node.getChild("Name")
+
+        } catch (ex: FoundNoChild) {
+            super.visitUnaryExpressionNotPlusMinus(node)
+        }
+    }
+
+    /**
+     * ExpressionName:
+     * As the left-hand operand of an assignment operator (§15.26)
+     */
+    override fun visitLeftHandSide(node: CSTNode) {
+        try {
+            val nameNode = node.getChild("Name")
+
+        } catch (ex: FoundNoChild) {
+            super.visitLeftHandSide(node)
+        }
+    }
 }
 
 class NameResolver {
