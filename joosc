@@ -1,6 +1,6 @@
 #!/bin/bash
 
-java -cp gen/oj.jar OJKt $1
+java -cp gen/oj.jar OJKt "$@"
 OUTPUT=$?
 RETURN_VALUE=${OUTPUT##*$'\n'}  # Get the last line of the output.
 exit $RETURN_VALUE
