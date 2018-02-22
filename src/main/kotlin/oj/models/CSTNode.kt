@@ -13,7 +13,7 @@ data class CSTNode(
 
     fun getDescendants(predicate: (CSTNode) -> Boolean): List<CSTNode> {
         val descendants = mutableListOf<CSTNode>()
-        val stack: Stack<CSTNode> = Stack()
+        val stack = LinkedList<CSTNode>()
         stack.add(this)
 
         while (stack.isNotEmpty()) {
