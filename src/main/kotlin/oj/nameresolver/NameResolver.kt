@@ -214,6 +214,45 @@ class NameResolutionVisitor(private val packages: Map<String, Set<CSTNode>>) : C
             super.visitLeftHandSide(node)
         }
     }
+
+    /**
+     * MethodName
+     * Before the “(” in a method invocation expression (§15.12)
+     */
+    override fun visitMethodInvocation(node: CSTNode) {
+        try {
+            val nameNode = node.getChild("Name")
+
+
+        } catch (ex: FoundNoChild) {
+//            try {
+//                /**
+//                 * Rule:
+//                 * MethodInvocation -> Primary . IDENTIFIER ( ArgumentListOpt )
+//                 *
+//                 * Can we resolve this method name without type information?
+//                 * We have to know what type Primary resolves to so that we can check if
+//                 * a method with name Identifier exists within that Type
+//                 */
+//                val nameNode = node.getChild("IDENTIFIER")
+//                // Can we resolve this without type checking? We'll have to know what type
+//                // Primary is associated with
+//
+//            } catch (ex: FoundNoChild) {
+//                super.visitMethodInvocation(node)
+//            }
+
+            super.visitMethodInvocation(node)
+        }
+    }
+
+    /**
+     * PackageOrTypeName
+     * In a type-import-on-demand declaration (§7.5.2)
+     */
+    override fun visitTypeImportOnDemandDeclaration(node: CSTNode) {
+        val nameNode = node.getChild("Name")
+    }
 }
 
 class NameResolver {
