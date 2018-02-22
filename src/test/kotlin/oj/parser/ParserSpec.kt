@@ -74,4 +74,17 @@ object ParserSpec : SubjectSpek<(String) -> CSTNode>({
             subject(program)
         }
     }
+
+    it("should parse programs with singular assignments correctly") {
+        val program = """
+            |package bazola;
+            |
+            |public class Gabriel {
+            |   static int n = org.rpgpoet.Music.wizards.length;
+            |}
+        """.trimMargin()
+
+        val tree : CSTNode = subject(program)
+        assertEquals("CompilationUnit", tree.name)
+    }
 })
