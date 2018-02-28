@@ -346,7 +346,7 @@ class NameResolutionVisitor(
         val nameNode = classTypeNode.getDescendant("Name")
         resolveTypeName(nameNode)
 
-        this.visitClassInstanceCreationExpression(node)
+        super.visitClassInstanceCreationExpression(node)
     }
 
     /**
