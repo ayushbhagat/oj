@@ -2,6 +2,7 @@ import oj.models.CSTNode
 import oj.parser.CFGStateDataHelper
 import oj.parser.Parser
 import oj.models.NFA
+import oj.nameresolver.NameResolver
 import oj.scanner.BASE_DFA_NAMES
 import oj.scanner.SCANNER_DFA
 import oj.scanner.Scanner
@@ -17,6 +18,11 @@ fun main(args: Array<String>) {
     }
 
     val filenames = args.toList()
+//    val filenames = listOf(
+//        "./test/name-resolution/A.java",
+//        "./test/name-resolution/B.java"
+//        "./test/name-resolution/temp/B.java"
+//    )
 
     try {
         val baseDfas = BASE_DFA_NAMES
@@ -45,7 +51,7 @@ fun main(args: Array<String>) {
         )
 
         val parser = Parser(lr1DFA)
-        val packages = mutableMapOf<String, MutableSet<CSTNode>>()
+        val packages = mutableMapOf<String, MutableList<CSTNode>>()
 
         filenames.forEach({ filename ->
             val inputFileString = File(filename).inputStream().bufferedReader().use { it.readText() }
@@ -81,11 +87,14 @@ fun main(args: Array<String>) {
                 nameNode.getDescendants("IDENTIFIER").map({ it.lexeme }).joinToString(".")
             }
 
-            val pkg = packages.getOrDefault(packageName, mutableSetOf())
+            val pkg = packages.getOrDefault(packageName, mutableListOf())
             pkg.add(cst)
 
             packages[packageName] = pkg
         })
+
+        NameResolver.resolveNames(packages)
+
 
     } catch (e: Exception) {
         e.printStackTrace()

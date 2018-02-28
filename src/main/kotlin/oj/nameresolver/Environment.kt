@@ -3,12 +3,15 @@ package oj.nameresolver
 import oj.models.CSTNode
 import java.util.*
 
-data class Declaration(val name: String, val node: CSTNode)
-
 data class Environment(
-    private val scopes: LinkedList<LinkedList<Declaration>> = LinkedList()
+    private val scopes: LinkedList<LinkedList<Entry>> = LinkedList()
 ) {
-    class LookupFailed(name: String): Exception("Declaration $name not found in environment.")
+    data class Entry(val name: String, val node: CSTNode)
+
+    class LookupFailed: Exception {
+        constructor(name: String): super("Lookup failed: Declaration $name not found in environment.")
+        constructor(): super("Lookup failed")
+    }
 
     fun pushScope() {
         scopes.push(LinkedList())
@@ -23,18 +26,64 @@ data class Environment(
             pushScope()
         }
 
-        scopes.peek().push(Declaration(name, declarationNode))
+        scopes.peek().push(Entry(name, declarationNode))
     }
 
-    fun lookup(name: String) : CSTNode {
+    fun find(name: String) : CSTNode {
         for (scope in scopes) {
-            for (declaration in scope) {
-                if (declaration.name == name) {
-                    return declaration.node
+            for (entry in scope) {
+                if (entry.name == name) {
+                    return entry.node
                 }
             }
         }
 
         throw LookupFailed(name)
+    }
+
+    fun find(predicate: (Entry) -> Boolean) : CSTNode {
+        for (scope in scopes) {
+            for (entry in scope) {
+                if (predicate(entry)) {
+                    return entry.node
+                }
+            }
+        }
+
+        throw LookupFailed()
+    }
+
+    fun findAll(name: String) : List<CSTNode> {
+        return findAll({ it.name == name})
+    }
+
+    fun findAll(predicate: (Entry) -> Boolean) : List<CSTNode> {
+        val found = mutableListOf<CSTNode>()
+
+        for (scope in scopes) {
+            for (entry in scope) {
+                if (predicate(entry)) {
+                    found.add(entry.node)
+                }
+            }
+        }
+
+        return found
+    }
+
+    fun contains(name: String): Boolean {
+        return contains({ it.name == name })
+    }
+
+    fun contains(predicate: (Entry) -> Boolean): Boolean {
+        for (scope in scopes) {
+            for (entry in scope) {
+                if (predicate(entry)) {
+                    return true
+                }
+            }
+        }
+
+        return false
     }
 }

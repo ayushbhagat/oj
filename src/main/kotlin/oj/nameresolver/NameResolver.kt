@@ -5,28 +5,115 @@ import oj.models.CSTNodeVisitor
 import oj.models.FoundNoChild
 import oj.models.FoundNoDescendant
 
-class InvalidNameResolutionInsertion(reason: String): Exception(reason)
+open class NameResolutionError(reason: String) : Exception(reason)
+class InvalidNameResolutionInsertion(reason: String): NameResolutionError(reason)
+class TypeImportedFromTwoImportOnDemandDeclarations(typeName: String)
+    : NameResolutionError("Type $typeName was imported from two different import on demand declarations")
 
-class NameResolutionVisitor(private val packages: Map<String, Set<CSTNode>>) : CSTNodeVisitor() {
-    private val environment = Environment()
+val isClassOrInterfaceDeclaration = { node: CSTNode ->
+    node.name == "ClassDeclaration" || node.name == "InterfaceDeclaration"
+}
+
+class NameResolutionVisitor(
+    private val environment: Environment,
+    val typesDeclaredInPackages: Map<String, Map<String, CSTNode>>
+) : CSTNodeVisitor() {
     private val nameResolution = mutableMapOf<CSTNode, CSTNode>()
+    var importOnDemandDeclarationEnvironment: Environment = Environment()
+
+    fun attachImportOnDemandEnvironment(declarations: Environment) {
+        importOnDemandDeclarationEnvironment = declarations
+    }
+
+    fun detachImportOnDemandEnvironment() {
+        importOnDemandDeclarationEnvironment = Environment()
+    }
 
     fun getNameResolution(): Map<CSTNode, CSTNode> {
         return nameResolution
     }
 
     fun addNameResolution(nameNode: CSTNode, declaration: CSTNode) {
-        if (nameNode.name != "Name") {
-            println(nameNode)
-            throw InvalidNameResolutionInsertion("Tried to assign a declaration to a non-Name node: ${nameNode.name}")
-        }
+        /**
+         * TODO:
+         * Consider adding declaration as a field to nameNode
+         * This won't work when our program has two Name nodes that are value equal to each other.
+         */
+    }
 
-        if (nameResolution.contains(nameNode)) {
-            println(nameNode)
-            throw InvalidNameResolutionInsertion("Tried to re-define the declaration assigned with a node")
-        }
+    fun resolveTypeName(nameNode: CSTNode) {
+        val name = nameNode.getDescendants("IDENTIFIER").map({ it.lexeme })
 
-        nameResolution[nameNode] = declaration
+        if (name.size == 1) {
+            val typeName = name[0]
+            val predicate = { entry: Environment.Entry ->
+                entry.name == typeName && isClassOrInterfaceDeclaration(entry.node)
+            }
+
+            if (environment.contains(predicate)) {
+                addNameResolution(nameNode, environment.find(predicate))
+            } else {
+                val iodLookup = importOnDemandDeclarationEnvironment.findAll(typeName)
+                if (iodLookup.size == 1) {
+                    addNameResolution(nameNode, iodLookup[0])
+                } else if (iodLookup.size > 1) {
+                    throw NameResolutionError("TypeName \"$typeName\" maps to types in more than one import on demand declarations")
+                } else {
+                    throw NameResolutionError("TypeName \"$typeName\" doesn't exist.")
+                }
+            }
+        } else {
+            val typeName = name.last()
+            val packageName = name.subList(0, name.size - 1).joinToString(".")
+            if (!typesDeclaredInPackages.containsKey(packageName)) {
+                throw NameResolutionError("Tried to access type \"$typeName\" in package \"$packageName\", but package \"$packageName\" doesn't exist.")
+            }
+
+            val typesInPackage = typesDeclaredInPackages[packageName]!!
+            if (!typesInPackage.containsKey(typeName)) {
+                throw NameResolutionError("Tried to access type \"$typeName\" in package \"$packageName\", but type \"$typeName\" doesn't exist.")
+            }
+
+            addNameResolution(nameNode, typesInPackage[typeName]!!)
+        }
+    }
+
+    fun resolveExpressionName(nameNode: CSTNode) {
+        val name = nameNode.getDescendants("IDENTIFIER").map({ it.lexeme })
+        if (name.size == 1) {
+            val expressionName = name[0]
+            // Ensure that the expression name is defined. If so, add it to the name resolution, otherwise throw error.
+            val declarationNode = environment.find(expressionName)
+            addNameResolution(nameNode, declarationNode)
+        } else {
+            // TODO: We don't currently support resolution of ambiguous names. This is A3.
+        }
+    }
+
+    fun resolveMethodName(nameNode: CSTNode) {
+        val name = nameNode.getDescendants("IDENTIFIER").map({ it.lexeme })
+        if (name.size == 1) {
+            val methodName = name[0]
+            // Ensure that the method name is defined. If so, add it to the name resolution, otherwise throw error.
+            val declarationNode = environment.find({ it.name == methodName && it.node.name == "MethodDeclaration" })
+            addNameResolution(nameNode, declarationNode)
+        } else {
+            // TODO: We don't currently support resolution of ambiguous names. This is A3.
+        }
+    }
+
+    override fun visitClassDeclaration(node: CSTNode) {
+        val typeName = node.getChild("IDENTIFIER").lexeme
+        environment.push(typeName, node)
+
+        super.visitClassDeclaration(node)
+    }
+
+    override fun visitInterfaceDeclaration(node: CSTNode) {
+        val typeName = node.getChild("IDENTIFIER").lexeme
+        environment.push(typeName, node)
+
+        super.visitInterfaceDeclaration(node)
     }
 
     /**
@@ -34,7 +121,13 @@ class NameResolutionVisitor(private val packages: Map<String, Set<CSTNode>>) : C
      * In a single-type-import declaration (§7.5.1)
      */
     override fun visitSingleTypeImportDeclaration(node: CSTNode) {
+        // TODO: Do we need to do anything for this?
         val nameNode = node.getChild("Name")
+        val name = nameNode.getDescendants("IDENTIFIER").map({ it.lexeme })
+
+        if (name.size > 1) {
+
+        }
     }
 
     /**
@@ -43,6 +136,9 @@ class NameResolutionVisitor(private val packages: Map<String, Set<CSTNode>>) : C
      */
     override fun visitSuper(node: CSTNode) {
         val nameNode = node.getDescendant("Name")
+        resolveTypeName(nameNode)
+
+        super.visitSuper(node)
     }
 
     /**
@@ -52,6 +148,9 @@ class NameResolutionVisitor(private val packages: Map<String, Set<CSTNode>>) : C
      */
     override fun visitInterfaceType(node: CSTNode) {
         val nameNode = node.getDescendant("Name")
+        resolveTypeName(nameNode)
+
+        super.visitInterfaceType(node)
     }
 
     /**
@@ -59,14 +158,119 @@ class NameResolutionVisitor(private val packages: Map<String, Set<CSTNode>>) : C
      * As a Type In a field declaration (§8.3, §9.3)
      */
     override fun visitFieldDeclaration(node: CSTNode) {
+        /**
+         * Resolve the type in this declaration
+         */
         val typeNode = node.getChild("Type")
 
         try {
             val nameNode = typeNode.getDescendant("Name")
-
+            resolveTypeName(nameNode)
         } catch (ex: FoundNoDescendant) {
-            super.visitFieldDeclaration(node)
+            // Do nothing
         }
+
+        super.visitFieldDeclaration(node)
+
+        /**
+         * Add declaration to environment
+         */
+        val fieldDeclarationName = when {
+            node.children[2].name == "IDENTIFIER" -> node.children[2].lexeme
+            else -> {
+                node.getChild("VariableDeclarator").getChild("IDENTIFIER").lexeme
+            }
+        }
+
+        if (environment.contains({ it.name == fieldDeclarationName && it.node.name == "FieldDeclaration" })) {
+            throw NameResolutionError("Tried to declare field \"$fieldDeclarationName\" twice in the same class.")
+        }
+
+        environment.push(fieldDeclarationName, node)
+    }
+
+    override fun visitClassBodyDeclarations(node: CSTNode) {
+        /**
+         * Step 1: Add all static fields to environment
+         */
+        val fieldDeclarations = node.getDescendants("FieldDeclaration")
+        val staticFieldDeclarations = fieldDeclarations.filter({ declaration ->
+            val modifiers = declaration.getChild("Modifiers")
+            modifiers.getDescendants("static").isNotEmpty()
+        })
+
+        staticFieldDeclarations.forEach({ this.visit(it) })
+
+        /**
+         * Step 2: Get all static methods.
+         */
+        val methodDeclarations = node.getDescendants("MethodDeclaration")
+        val staticMethodDeclarations = methodDeclarations.filter({ methodDeclaration ->
+            val methodHeader = methodDeclaration.getChild("MethodHeader")
+            val modifiers = methodHeader.getChild("Modifiers")
+
+            modifiers.getDescendants("static").isNotEmpty()
+        })
+
+        /**
+         * Step 3: Add all static methods to the environment.
+         */
+
+        staticMethodDeclarations.forEach({ staticMethodDeclaration ->
+            val methodHeader = staticMethodDeclaration.getChild("MethodHeader")
+            this.visit(methodHeader)
+
+            val methodDeclarator = methodHeader.getChild("MethodDeclarator")
+            val methodName = methodDeclarator.getChild("IDENTIFIER").lexeme
+
+            environment.push(methodName, staticMethodDeclaration)
+        })
+
+        /**
+         * Step 4: Do name resolution on static method bodies.
+         * This is done before we adding any non-static fields because static method bodies can't use instance fields.
+         */
+        staticMethodDeclarations.forEach({ staticMethodDeclaration ->
+            val methodBody = staticMethodDeclaration.getChild("MethodBody")
+            this.visit(methodBody)
+        })
+
+        /**
+         * Step 5: Add all instance fields to the environment.
+         */
+        val instanceFieldDeclarations = fieldDeclarations - staticFieldDeclarations
+        instanceFieldDeclarations.forEach({ this.visit(it) })
+
+        /**
+         * Step 6: Add all instance methods to the environment.
+         */
+        val instanceMethodDeclarations = methodDeclarations - staticMethodDeclarations
+        instanceMethodDeclarations.forEach({ instanceMethodDeclaration ->
+            val methodHeader = instanceMethodDeclaration.getChild("MethodHeader")
+            this.visit(methodHeader)
+
+            val methodDeclarator = methodHeader.getChild("MethodDeclarator")
+            val methodName = methodDeclarator.getChild("IDENTIFIER").lexeme
+
+            environment.push(methodName, instanceMethodDeclaration)
+        })
+
+        /**
+         * Step 7: Do name resolution on constructors and instance methods.
+         */
+        instanceMethodDeclarations.forEach({ instanceMethodDeclaration ->
+            val methodBody = instanceMethodDeclaration.getChild("MethodBody")
+            this.visit(methodBody)
+        })
+
+        val constructorDeclarations = node.getDescendants("ConstructorDeclaration")
+        constructorDeclarations.forEach({ this.visit(it) })
+    }
+
+    override fun visitBlock(node: CSTNode) {
+        environment.pushScope()
+        super.visitBlock(node)
+        environment.popScope()
     }
 
     /**
@@ -77,13 +281,14 @@ class NameResolutionVisitor(private val packages: Map<String, Set<CSTNode>>) : C
         try {
             val typeNode = node.getChild("Type")
             val nameNode = typeNode.getDescendant("Name")
-
-
+            resolveTypeName(nameNode)
         } catch (ex: FoundNoChild) {
-            super.visitMethodHeader(node)
+            // Do nothing
         } catch (ex: FoundNoDescendant) {
-            super.visitMethodHeader(node)
+            // Do nothing
         }
+
+        super.visitMethodHeader(node)
     }
 
     /**
@@ -93,14 +298,17 @@ class NameResolutionVisitor(private val packages: Map<String, Set<CSTNode>>) : C
      */
     override fun visitFormalParameter(node: CSTNode) {
         val typeNode = node.getChild("Type")
-
         try {
             val nameNode = typeNode.getDescendant("Name")
-
-
+            resolveTypeName(nameNode)
         } catch (ex: FoundNoDescendant) {
-            super.visitFormalParameter(node)
+            // Do nothing
         }
+
+        super.visitFormalParameter(node)
+
+        val name = node.getChild("IDENTIFIER").lexeme
+        environment.push(name, node)
     }
 
     /**
@@ -112,11 +320,20 @@ class NameResolutionVisitor(private val packages: Map<String, Set<CSTNode>>) : C
 
         try {
             val nameNode = typeNode.getDescendant("Name")
-
-
+            resolveTypeName(nameNode)
         } catch (ex: FoundNoDescendant) {
-            super.visitLocalVariableDeclaration(node)
         }
+
+        super.visitLocalVariableDeclaration(node)
+
+        val variableDeclaratorNode = node.getChild("VariableDeclarator")
+        val variableName = variableDeclaratorNode.getChild("IDENTIFIER").lexeme
+
+        if (environment.contains({ it.name == variableName && (it.node.name == "LocalVariableDeclaration" || it.node.name == "FormalParameter") })) {
+            throw NameResolutionError("Tried to declare variable \"$variableName\" twice in the same scope.")
+        }
+
+        environment.push(variableName, node)
     }
 
     /**
@@ -127,6 +344,9 @@ class NameResolutionVisitor(private val packages: Map<String, Set<CSTNode>>) : C
     override fun visitClassInstanceCreationExpression(node: CSTNode) {
         val classTypeNode = node.getChild("ClassType")
         val nameNode = classTypeNode.getDescendant("Name")
+        resolveTypeName(nameNode)
+
+        this.visitClassInstanceCreationExpression(node)
     }
 
     /**
@@ -137,10 +357,11 @@ class NameResolutionVisitor(private val packages: Map<String, Set<CSTNode>>) : C
         try {
             val classOrInterfaceTypeNode = node.getChild("ClassOrInterfaceType")
             val nameNode = classOrInterfaceTypeNode.getChild("Name")
-
+            resolveTypeName(nameNode)
         } catch (ex: FoundNoChild) {
-            super.visitArrayCreationExpression(node)
         }
+
+        super.visitArrayCreationExpression(node)
     }
 
     /**
@@ -154,10 +375,11 @@ class NameResolutionVisitor(private val packages: Map<String, Set<CSTNode>>) : C
             else -> null
         }
 
-        if (nameNode == null) {
-            super.visitCastExpression(node)
-            return
+        if (nameNode != null) {
+            resolveTypeName(nameNode)
         }
+
+        super.visitCastExpression(node)
     }
 
     /**
@@ -168,10 +390,11 @@ class NameResolutionVisitor(private val packages: Map<String, Set<CSTNode>>) : C
         try {
             val referenceTypeNode = node.getChild("ReferenceType")
             val nameNode = referenceTypeNode.getDescendant("Name")
-
+            resolveTypeName(nameNode)
         } catch (ex: FoundNoChild) {
-            super.visitRelationalExpression(node)
         }
+
+        super.visitRelationalExpression(node)
     }
 
     /**
@@ -181,10 +404,10 @@ class NameResolutionVisitor(private val packages: Map<String, Set<CSTNode>>) : C
     override fun visitArrayAccess(node: CSTNode) {
         try {
             val nameNode = node.getChild("Name")
-
+            resolveExpressionName(nameNode)
         } catch (ex: FoundNoChild) {
-            super.visitArrayAccess(node)
         }
+        super.visitArrayAccess(node)
     }
 
     /**
@@ -196,10 +419,10 @@ class NameResolutionVisitor(private val packages: Map<String, Set<CSTNode>>) : C
     override fun visitUnaryExpressionNotPlusMinus(node: CSTNode) {
         try {
             val nameNode = node.getChild("Name")
-
+            resolveExpressionName(nameNode)
         } catch (ex: FoundNoChild) {
-            super.visitUnaryExpressionNotPlusMinus(node)
         }
+        super.visitUnaryExpressionNotPlusMinus(node)
     }
 
     /**
@@ -209,10 +432,11 @@ class NameResolutionVisitor(private val packages: Map<String, Set<CSTNode>>) : C
     override fun visitLeftHandSide(node: CSTNode) {
         try {
             val nameNode = node.getChild("Name")
-
+            resolveExpressionName(nameNode)
         } catch (ex: FoundNoChild) {
-            super.visitLeftHandSide(node)
         }
+
+        super.visitLeftHandSide(node)
     }
 
     /**
@@ -222,8 +446,7 @@ class NameResolutionVisitor(private val packages: Map<String, Set<CSTNode>>) : C
     override fun visitMethodInvocation(node: CSTNode) {
         try {
             val nameNode = node.getChild("Name")
-
-
+            resolveMethodName(nameNode)
         } catch (ex: FoundNoChild) {
 //            try {
 //                /**
@@ -241,9 +464,8 @@ class NameResolutionVisitor(private val packages: Map<String, Set<CSTNode>>) : C
 //            } catch (ex: FoundNoChild) {
 //                super.visitMethodInvocation(node)
 //            }
-
-            super.visitMethodInvocation(node)
         }
+        super.visitMethodInvocation(node)
     }
 
     /**
@@ -255,14 +477,102 @@ class NameResolutionVisitor(private val packages: Map<String, Set<CSTNode>>) : C
     }
 }
 
+class DetectedTwoTypesWithSameNameInSamePackage(packageName: String, typeName: String)
+    : Exception("Detected two types named \"$typeName\" within package \"$packageName\".")
+
+class ImportOnDemandDeclarationDetectedForNonExistentPackage(packageName: String)
+    : Exception("Detected an import on demand declaration for package \"$packageName\", when no such package exists.")
+
+class SingleTypeImportDeclarationDetectedForNonExistentPackage(packageName: String)
+    : Exception("Detected a single type import declaration for package \"$packageName\", when no such package exists.")
+
+class SingleTypeImportDeclarationDetectedForNonExistentType(packageName: String, typeName: String)
+    : Exception("Detected a single type import declaration \"$packageName.$typeName\", when no type \"$typeName\" exists in package \"$packageName\".")
+
 class NameResolver {
     companion object {
-        fun resolveNames(packages: Map<String, Set<CSTNode>>) : Map<CSTNode, CSTNode> {
-            val visitor = NameResolutionVisitor(packages)
+        fun resolveNames(packages: Map<String, List<CSTNode>>) : Map<CSTNode, CSTNode> {
+            val globalEnvironment = Environment()
 
-            packages.forEach({(_, compilationUnits) ->
+
+            val typesDeclaredInPackage = packages.mapValues({(packageName, compilationUnits) ->
+                val packageTypeDeclarations = compilationUnits
+                    .flatMap({ compilationUnit -> compilationUnit.getDescendants(isClassOrInterfaceDeclaration) })
+                    .fold(mutableMapOf<String, CSTNode>(), { map, typeDeclarationNode ->
+                        val typeName = typeDeclarationNode.getChild("IDENTIFIER").lexeme
+
+                        if (map.contains(typeName)) {
+                            throw DetectedTwoTypesWithSameNameInSamePackage(packageName, typeName)
+                        }
+
+                        map[typeName] = typeDeclarationNode
+                        map
+                    })
+
+            packageTypeDeclarations
+            })
+
+            val getTypesDeclaredInPackage = { packageName: String -> typesDeclaredInPackage[packageName]!! }
+
+            val visitor = NameResolutionVisitor(globalEnvironment, typesDeclaredInPackage)
+
+            packages.forEach({(packageName, compilationUnits) ->
                 compilationUnits.forEach({ compilationUnit ->
+                    // TODO:
+                    // Type import on demand declarations can import things from types, so it's not as simple as this
+                    val iodEnvironment = compilationUnit
+                        .getDescendants("TypeImportOnDemandDeclaration")
+                        .map({ node -> node.getDescendants("IDENTIFIER") })
+                        .map({ identifiers -> identifiers.map({ it.lexeme }).joinToString(".")})
+                        .filter({ it != packageName })
+                        .fold(Environment(), { iodEnvironment, iodPackageName ->
+                            if (!packages.contains(iodPackageName)) {
+                                // TODO: Only throw when iodPackageName is not a prefix of any package names
+                                throw ImportOnDemandDeclarationDetectedForNonExistentPackage(iodPackageName)
+                            }
+
+                            val typesDeclaredInThisPackage = getTypesDeclaredInPackage(iodPackageName)
+
+                            typesDeclaredInThisPackage.forEach({(typeName, typeDeclarationNode) ->
+                                iodEnvironment.push(typeName, typeDeclarationNode)
+                            })
+
+                            iodEnvironment
+                        })
+
+                    visitor.attachImportOnDemandEnvironment(iodEnvironment)
+                    globalEnvironment.pushScope()
+
+                    getTypesDeclaredInPackage(packageName)
+                        .forEach({(typeName, typeDeclaration) ->
+                            globalEnvironment.push(typeName, typeDeclaration)
+                        })
+
+                    // TODO: Output error when a single type import declaration makes available a type that we have available locally
+                    compilationUnit
+                        .getDescendants("SingleTypeImportDeclaration")
+                        .forEach({ stiDeclaration ->
+                            val name = stiDeclaration.getDescendants("IDENTIFIER").map({ it.lexeme })
+                            val stiPackageName = name.subList(0, name.size - 1).joinToString(".")
+                            val typeName = name.last()
+
+                            if (!typesDeclaredInPackage.contains(stiPackageName)) {
+                                throw SingleTypeImportDeclarationDetectedForNonExistentPackage(stiPackageName)
+                            }
+
+                            val typesInPackage = typesDeclaredInPackage[stiPackageName]!!
+
+                            if (!typesInPackage.contains(typeName)) {
+                                throw SingleTypeImportDeclarationDetectedForNonExistentType(stiPackageName, typeName)
+                            }
+
+                            globalEnvironment.push(typeName, typesInPackage[typeName]!!)
+                        })
+
                     visitor.visit(compilationUnit)
+
+                    globalEnvironment.popScope()
+                    visitor.detachImportOnDemandEnvironment()
                 })
             })
 
