@@ -654,4 +654,16 @@ object WeederSpec : SubjectSpek<(String) -> CSTNode>({
         }
     }
 
+    it("should not allow interface methods to be protected") {
+        val program = """
+            |public interface HelloWorld {
+            |   protected void foo();
+            |}
+        """.trimMargin()
+
+        assertFailsWith(InterfaceWeeder.InterfaceMethodIsProtectedError::class) {
+            subject(program)
+        }
+    }
+
 })
