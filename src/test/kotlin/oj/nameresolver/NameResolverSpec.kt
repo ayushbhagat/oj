@@ -933,4 +933,32 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
             })
         }
     }
+
+    it("should not allow any package prefix of a fully qualified TypeName usage to contain types") {
+        assertFailsWith(NameResolutionError::class, {
+            subject(listOf(
+                """
+                    public class Main {
+                        public Main() {
+                            horse.fly.cow.moo.A a = new horse.fly.cow.moo.A();
+                        }
+                    }
+                """.trimIndent(),
+                """
+                    package horse.fly.cow.moo;
+
+                    public class A {
+                        public A(int i) {}
+                    }
+                """.trimIndent(),
+                """
+                    package horse.fly;
+
+                    public class Test {
+                        public Test() {}
+                    }
+                """.trimIndent()
+            ))
+        })
+    }
 })

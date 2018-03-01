@@ -143,9 +143,20 @@ class NameResolutionVisitor(
             }
         } else {
             val typeName = name.last()
-            val packageName = name.subList(0, name.size - 1).joinToString(".")
+            val pkg = name.subList(0, name.size - 1)
+            val packageName = pkg.joinToString(".")
+
             if (!typesDeclaredInPackages.containsKey(packageName)) {
                 throw NameResolutionError("Tried to access type \"$typeName\" in package \"$packageName\", but package \"$packageName\" doesn't exist.")
+            }
+
+            for (i in IntRange(1, pkg.size - 1)) {
+                val prefix = pkg.subList(0, i)
+                val prefixPackageName = prefix.joinToString(".")
+
+                if (typesDeclaredInPackages.containsKey(prefixPackageName)) {
+                    throw NameResolutionError("Prefix \"$prefixPackageName\" of a package \"$packageName\" used to resolve type \"$typeName\" contained a type.")
+                }
             }
 
             val typesInPackage = typesDeclaredInPackages[packageName]!!
