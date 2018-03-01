@@ -210,7 +210,45 @@ class NameResolutionVisitor(
             return
         }
 
+        try {
+            val interfaces = node.getChild("InterfacesOpt").getDescendant("Interfaces")
+            val interfaceTypes = interfaces.getDescendants("InterfaceType")
+            val interfaceNames = interfaceTypes.map({ it.getDescendant("Name") })
+            val isNameAnInterfaceDeclaration = { interfaceName: CSTNode ->
+                interfaceName.declaration!!.name == "InterfaceDeclaration"
+            }
+
+            val className = node.getChild("IDENTIFIER").lexeme
+
+            if (!interfaceNames.all(isNameAnInterfaceDeclaration)) {
+                throw HierarchyCheckingError("Class \"$className\" tried to implement a class.")
+            }
+
+            val interfaceDeclarations = interfaceNames.map({ it.declaration!! })
+
+            for (i in IntRange(0, interfaceDeclarations.size - 1)) {
+                for (j in IntRange(0, interfaceDeclarations.size - 1)) {
+                    if (i == j) {
+                        continue
+                    }
+
+                    if (interfaceDeclarations[i] === interfaceDeclarations[j]) {
+                        val interfaceDeclaration = interfaceDeclarations[i]
+                        val interfaceName = interfaceDeclaration.getChild("IDENTIFIER").lexeme
+                        throw HierarchyCheckingError("Class $className implements interface $interfaceName more than once")
+                    }
+                }
+            }
+
+        } catch (ex: FoundNoDescendant) {
+
+        }
+
         fun getInheritedDescendants(classDeclaration: CSTNode, descendantName: String) : List<CSTNode> {
+            if (classDeclaration.name != "ClassDeclaration") {
+                throw HierarchyCheckingError("Expected a class declaration, but found ${classDeclaration.name} instead.")
+            }
+
             val classBody = classDeclaration.getChild("ClassBody")
             val descendantNodes = classBody.getDescendants(descendantName)
 
