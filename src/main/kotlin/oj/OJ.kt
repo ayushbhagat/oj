@@ -19,9 +19,21 @@ fun main(args: Array<String>) {
 
     val filenames = args.toList()
 //    val filenames = listOf(
-//        "./test/name-resolution/A.java",
-//        "./test/name-resolution/B.java"
-//        "./test/name-resolution/temp/B.java"
+//        "./stdlib/java/io/OutputStream.java",
+//        "./stdlib/java/io/PrintStream.java",
+//        "./stdlib/java/io/Serializable.java",
+//        "./stdlib/java/lang/Boolean.java",
+//        "./stdlib/java/lang/Byte.java",
+//        "./stdlib/java/lang/Character.java",
+//        "./stdlib/java/lang/Class.java",
+//        "./stdlib/java/lang/Cloneable.java",
+//        "./stdlib/java/lang/Integer.java",
+//        "./stdlib/java/lang/Number.java",
+//        "./stdlib/java/lang/Object.java",
+//        "./stdlib/java/lang/Short.java",
+//        "./stdlib/java/lang/String.java",
+//        "./stdlib/java/lang/System.java",
+//        "./stdlib/java/util/Arrays.java"
 //    )
 
     try {

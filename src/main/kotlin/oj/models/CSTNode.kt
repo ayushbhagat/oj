@@ -11,7 +11,8 @@ class FoundManyDescendants: Exception("Found many descendants, expected 1.")
 data class CSTNode(
     val name: String,
     val lexeme: String,
-    val children: MutableList<CSTNode> = mutableListOf()
+    val children: MutableList<CSTNode> = mutableListOf(),
+    var declaration: CSTNode? = null
 ) {
 
     fun getDescendant(name: String): CSTNode {
