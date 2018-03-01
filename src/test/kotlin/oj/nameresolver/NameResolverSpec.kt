@@ -7,6 +7,7 @@ import oj.parser.Parser
 import oj.scanner.BASE_DFA_NAMES
 import oj.scanner.SCANNER_DFA
 import oj.scanner.Scanner
+import oj.weeder.MethodIsAbstractOrNativeIFFItHasNoMethodBodyWeeder
 import oj.weeder.Weeder
 import org.jetbrains.spek.api.dsl.*
 import org.jetbrains.spek.subject.SubjectSpek
@@ -956,6 +957,370 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
 
                     public class Test {
                         public Test() {}
+                    }
+                """.trimIndent()
+            ))
+        })
+    }
+
+    it("should not allow a class to extend an interface") {
+        assertFailsWith(HierarchyCheckingError::class, {
+            subject(listOf(
+                """
+                    public class A extends B {
+                        public A() {}
+                    }
+                """.trimIndent(),
+                """
+                    public interface B {
+                    }
+                """.trimIndent()
+            ))
+        })
+    }
+
+    it("should not allow a class to implement another class") {
+        assertFailsWith(HierarchyCheckingError::class, {
+            subject(listOf(
+                """
+                    public class A implements B {
+                        public A() {}
+                    }
+                """.trimIndent(),
+                """
+                    public class B {
+                        public B() {}
+                    }
+                """.trimIndent()
+            ))
+        })
+    }
+
+    it("should not permit interfaces to be repeated in an implements clause of a class declaration") {
+        assertFailsWith(HierarchyCheckingError::class, {
+            subject(listOf(
+                """
+                    public class A implements B, C, B {
+                        public A() {}
+                    }
+                """.trimIndent(),
+                """
+                    public interface B {
+                        public void sayHiB();
+                    }
+                """.trimIndent(),
+                """
+                    public interface C {
+                        public void sayHiC();
+                    }
+                """.trimIndent()
+            ))
+        })
+    }
+
+    it("should not permit interfaces to be repeated in the extends clause of an interface declaration") {
+        assertFailsWith(HierarchyCheckingError::class, {
+            subject(listOf(
+                """
+                    public interface A extends B, C, B {
+                    }
+                """.trimIndent(),
+                """
+                    public interface B {
+                        public void sayHiB();
+                    }
+                """.trimIndent(),
+                """
+                    public interface C {
+                        public void sayHiC();
+                    }
+                """.trimIndent()
+            ))
+        })
+    }
+
+    it("should no allow a class to extend a final class") {
+        assertFailsWith(HierarchyCheckingError::class, {
+            subject(listOf(
+                """
+                    public interface A extends B, C, B {
+                    }
+                """.trimIndent(),
+                """
+                    public interface B {
+                        public void sayHiB();
+                    }
+                """.trimIndent(),
+                """
+                    public interface C {
+                        public void sayHiC();
+                    }
+                """.trimIndent()
+            ))
+        })
+    }
+
+    it("should not allow an interface to extend a class") {
+        assertFailsWith(HierarchyCheckingError::class, {
+            subject(listOf(
+                """
+                    public interface A extends B {
+                    }
+                """.trimIndent(),
+                """
+                    public class B {
+                        public B() {}
+                    }
+                """.trimIndent()
+            ))
+        })
+    }
+
+    it("should not allow cycles in the interface hierarchy") {
+        assertFailsWith(HierarchyCheckingError::class, {
+            subject(listOf(
+                """
+                    public interface A extends B {
+                        public void sayHiA();
+                    }
+                """.trimIndent(),
+                """
+                    public interface B extends C {
+                        public void sayHiB();
+                    }
+                """.trimIndent(),
+                """
+                    public interface C extends A {
+                        public void sayHiC();
+                    }
+                """.trimIndent()
+            ))
+        })
+    }
+
+    it("should not allow an interface to extend itself") {
+        assertFailsWith(HierarchyCheckingError::class, {
+            subject(listOf(
+                """
+                    public interface A extends A {
+                        public void sayHi();
+                    }
+                """.trimIndent()
+            ))
+        })
+    }
+
+    it("should not allow cycles in the class hierarchy") {
+        assertFailsWith(HierarchyCheckingError::class, {
+            subject(listOf(
+                """
+                    public class A extends B {
+                        public A() {}
+                    }
+                """.trimIndent(),
+                """
+                    public class B extends C {
+                        public B() {}
+                    }
+                """.trimIndent(),
+                """
+                    public class C extends A {
+                        public C() {}
+                    }
+                """.trimIndent()
+            ))
+        })
+    }
+
+    it("should not allow a class to extend itself") {
+        assertFailsWith(HierarchyCheckingError::class, {
+            subject(listOf(
+                """
+                    public class A extends A {
+                        public A() {}
+                    }
+                """.trimIndent()
+            ))
+        })
+    }
+
+    it("should not allow a class to declare two methods with the same signature") {
+        assertFailsWith(NameResolutionError::class, {
+            subject(listOf(
+                """
+                    public class A {
+                        public A() {}
+
+                        public static void foo(int i, B b, B[] rest) {}
+                        public static void foo(int i2, B b2, B[] rest2) {}
+                    }
+                """.trimIndent(),
+                """
+                    public class B {
+                        public B() {}
+                    }
+                """.trimIndent()
+            ))
+        })
+    }
+
+    it("should not allow an interface to declare two methods with the same signature") {
+        assertFailsWith(NameResolutionError::class, {
+            subject(listOf(
+                """
+                    public interface A {
+                        public void foo(int i, B b, B[] rest);
+                        public void foo(int i2, B b2, B[] rest2);
+                    }
+                """.trimIndent(),
+                """
+                    public class B {
+                        public B() {}
+                    }
+                """.trimIndent()
+            ))
+        })
+    }
+
+    it("should not allow a class to declare two or more constructors with the same signatures") {
+        assertFailsWith(HierarchyCheckingError::class, {
+            subject(listOf(
+                """
+                    package horse;
+                    import cow.B;
+
+                    public class A {
+                        public A(int i, cow.B b, B[] rest) {}
+                        public A(int i2, B b2, cow.B[] rest2) {}
+                    }
+                """.trimIndent(),
+                """
+                    package cow;
+
+                    public class B {
+                        public B() {}
+                    }
+                """.trimIndent()
+            ))
+        })
+    }
+
+    /**
+     * A class or interface must not contain (declare or inherit) two methods with the same signature but different return types
+     *
+     * TODO: Are the following two tests sufficient to resolve this problem?
+     */
+
+    it("should not allow a class to override a method D with E if the return types of D and E are different") {
+        assertFailsWith(HierarchyCheckingError::class, {
+            subject(listOf(
+                """
+                    public class A extends B {
+                        public A() {}
+
+                        public void toInt(char b, int[] holymoly) {}
+                    }
+                """.trimIndent(),
+                """
+                    public class B {
+                        public B() {}
+
+                        public int toInt(char k, int[] j) {}
+                    }
+                """.trimIndent()
+            ))
+        })
+    }
+
+    it("should not allow an interface to override a method D with E if the return types of D and E are different") {
+        assertFailsWith(HierarchyCheckingError::class, {
+            subject(listOf(
+                """
+                    public interface A extends B {
+                        public void toInt(char b, int[] holymoly);
+                    }
+                """.trimIndent(),
+                """
+                    public interface B {
+                        public int toInt(char k, int[] j);
+                    }
+                """.trimIndent()
+            ))
+        })
+    }
+
+    it("should require classes that inherit but don't implement abstract methods to be marked abstract") {
+        assertFailsWith(HierarchyCheckingError::class, {
+            subject(listOf(
+                """
+                    public class A extends B {
+                        public A() {}
+                    }
+                """.trimIndent(),
+                """
+                    public abstract class B {
+                        public B() {}
+                        abstract public void toInt();
+                    }
+                """.trimIndent()
+                ))
+        })
+    }
+
+    it("should not allow a non-static method to replace a static method") {
+        // TODO: Run test, print and inspect CST
+
+        assert(false)
+    }
+
+    it("should allow an interface method to override a superinterface method if return types are same") {
+        subject(listOf(
+            """
+                public interface A {
+                    public int a();
+                }
+            """.trimIndent(),
+            """
+                public interface B extends A {
+                    public int a();
+                }
+            """.trimIndent()
+        ))
+    }
+
+
+    it("should not allow a protected method to override a public method in classes") {
+        assertFailsWith(HierarchyCheckingError::class, {
+            subject(listOf(
+                """
+                    public class A {
+                        public A() {}
+	                    public void foo() {}
+                    }
+                """.trimIndent(),
+                """
+                    public class B extends A {
+                        public B() {}
+                        protected void foo() {}
+                    }
+                """.trimIndent()
+            ))
+        })
+    }
+
+    it("should not allow a class method to replace a final method") {
+        assertFailsWith(HierarchyCheckingError::class, {
+            subject(listOf(
+                """
+                    public class A {
+                        public A() {}
+	                    final public void foo() {}
+                    }
+                """.trimIndent(),
+                """
+                    public class B extends A {
+                        public B() {}
+                        public void foo() {}
                     }
                 """.trimIndent()
             ))

@@ -6,6 +6,8 @@ import oj.models.FoundNoChild
 import oj.models.FoundNoDescendant
 
 open class NameResolutionError(reason: String) : Exception(reason)
+open class HierarchyCheckingError(reason: String) : NameResolutionError(reason)
+
 class InvalidNameResolutionInsertion(reason: String): NameResolutionError(reason)
 class TypeImportedFromTwoImportOnDemandDeclarations(typeName: String)
     : NameResolutionError("Type $typeName was imported from two different import on demand declarations")
