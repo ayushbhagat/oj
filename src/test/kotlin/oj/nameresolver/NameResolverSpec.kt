@@ -184,58 +184,7 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
                 ))
             })
         }
-
-        it("should not allow single name import to conflict with current class") {
-            assertFailsWith(DetectedTwoTypesWithSameNameInSamePackage::class, {
-                subject(listOf(
-                    """
-                        import test.A;
-
-                        public class A {
-                            public A() {}
-                        }
-                    """.trimIndent(),
-                    """
-                        package test;
-
-                        public class A {
-                            public A() {}
-                        }
-                    """.trimIndent()
-                ))
-            })
-        }
-
-        it("should not allow 2 single name imports") {
-            assertFailsWith(DetectedTwoTypesWithSameNameInSamePackage::class, {
-                subject(listOf(
-                    """
-            import test.B;
-            import test.util.B;
-
-            public class A {
-                public A() {}
-            }
-        """,
-                    """
-            package test;
-
-            public class B {
-                public B() {}
-            }
-        """,
-                    """
-            package test.util;
-
-            public class B {
-                public B() {}
-            }
-        """
-                ))
-            })
-        }
     }
-
 
     describe("import on demand declarations") {
         it("should not raise an error when another import on demand declaration contains the same type and the type is unused") {
@@ -439,6 +388,69 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
                 }
                 """
             ))
+        }
+
+        it("should not allow a package name to clash with a canonical class name") {
+            assertFailsWith(EitherPackageNameOrQualifiedType::class, {
+                subject(listOf(
+                    """
+                    package java;
+
+                    public class A {
+                        public A() {}
+                    }
+                    """.trimIndent(),
+                    """
+                    package java.A;
+
+                    public class B {
+                        public B() {}
+                    }
+                    """.trimIndent()
+                ))
+            })
+        }
+
+        it("should not allow import on demand declarations for a package that doesn't exist even if its a string prefix of some package that does exist") {
+            assertFailsWith(ImportOnDemandDeclarationDetectedForNonExistentPackage::class, {
+                subject(listOf(
+                    """
+                    import fo.*;
+
+                    public class A {
+                        public A() {}
+                    }
+                    """.trimIndent(),
+                    """
+                    package foo;
+
+                    public class B {
+                        public B() {}
+                    }
+                    """.trimIndent()
+                ))
+            })
+        }
+
+        it("should not allow single-type-import declarations for a package that doesn't exist even if its a string prefix of some package that does exist") {
+            assertFailsWith(SingleTypeImportDeclarationDetectedForNonExistentPackage::class, {
+                subject(listOf(
+                    """
+                    import fo.C;
+
+                    public class A {
+                        public A() {}
+                    }
+                    """.trimIndent(),
+                    """
+                    package foo;
+
+                    public class B {
+                        public B() {}
+                    }
+                    """.trimIndent()
+                ))
+            })
         }
     }
 

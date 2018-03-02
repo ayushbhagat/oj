@@ -667,7 +667,7 @@ object WeederSpec : SubjectSpek<(String) -> CSTNode>({
     }
 
     it("should not allow single name import to conflict with current class") {
-        assertFailsWith(ImportWeeder.SingleNameImportImportsSameTypeAsIsDeclared::class, {
+        assertFailsWith(PackageImportWeeder.SingleNameImportImportsSameTypeAsIsDeclared::class, {
             subject("""
                 import test.A;
 
@@ -688,7 +688,34 @@ object WeederSpec : SubjectSpek<(String) -> CSTNode>({
             |}
         """.trimMargin()
 
-        assertFailsWith(ImportWeeder.DuplicateSingleNameImport::class, {
+        assertFailsWith(PackageImportWeeder.DuplicateSingleNameImport::class, {
+            subject(program)
+        })
+    }
+
+    it("should not allow class and package name to be the same") {
+        val program = """|
+            |package A;
+            |
+            |public class A {
+            |   public A() {}
+            |}
+        """.trimMargin()
+
+        assertFailsWith(PackageImportWeeder.PackageNameIsTypeName::class, {
+            subject(program)
+        })
+    }
+
+    it("should not allow interface and package name to be the same") {
+        val program = """|
+            |package A;
+            |
+            |public interface A {
+            |}
+        """.trimMargin()
+
+        assertFailsWith(PackageImportWeeder.PackageNameIsTypeName::class, {
             subject(program)
         })
     }

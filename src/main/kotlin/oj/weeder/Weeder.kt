@@ -13,7 +13,7 @@ class Weeder {
             FieldWeeder().visit(root)
             IntegerRangeWeeder().visit(root)
             CastExpressionWeeder().visit(root)
-            ImportWeeder().visit(root)
+            PackageImportWeeder().visit(root)
             return root
         }
     }

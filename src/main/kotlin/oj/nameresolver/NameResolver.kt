@@ -654,8 +654,12 @@ class NameResolutionVisitor(
             ownAbstractMethodDeclarations.forEach({ ownAbstractMethodDeclaration ->
                 val ownAbstractMethodHeader = ownAbstractMethodDeclaration.getChild("MethodHeader")
 
-                allInheritedMethodDeclarations.forEach({inheritedMethodDeclaration ->
+                allInheritedMethodDeclarations.forEach(fun(inheritedMethodDeclaration: CSTNode) {
                     val inheritedMethodHeader = inheritedMethodDeclaration.getChild("MethodHeader")
+
+                    if (ownAbstractMethodDeclaration === inheritedMethodDeclaration) {
+                        return
+                    }
 
                     if (canMethodHeadersReplaceOneAnother(inheritedMethodHeader, ownAbstractMethodHeader)) {
                         val inheritedMethodName = getDeclarationName(inheritedMethodDeclaration)
@@ -1191,6 +1195,9 @@ class ImportOnDemandDeclarationDetectedForNonExistentPackage(packageName: String
 class SingleTypeImportDeclarationDetectedForNonExistentPackage(packageName: String)
     : Exception("Detected a single type import declaration for package \"$packageName\", when no such package exists.")
 
+class EitherPackageNameOrQualifiedType(canonicalName: String)
+    : Exception("Qualified identifier \"$canonicalName\" is both package name and a canonical type name.")
+
 class SingleTypeImportDeclarationDetectedForNonExistentType(packageName: String, typeName: String)
     : Exception("Detected a single type import declaration \"$packageName.$typeName\", when no type \"$typeName\" exists in package \"$packageName\".")
 
@@ -1218,7 +1225,7 @@ class NameResolver {
 
             val doesPackageExist = fun (packageName: String): Boolean {
                 for ((pkgName, _) in packages) {
-                    if (pkgName.startsWith(packageName)) {
+                    if (pkgName.startsWith(packageName + ".") || pkgName == packageName) {
                         return true
                     }
                 }
@@ -1240,6 +1247,14 @@ class NameResolver {
             }
 
             val visitor = NameResolutionVisitor(globalEnvironment, typesDeclaredInPackage)
+
+            packages.forEach({(packageName, _) ->
+                getTypesDeclaredInPackage(packageName).forEach({(typeName, _) ->
+                    if (doesPackageExist("$packageName.$typeName")) {
+                        throw EitherPackageNameOrQualifiedType("$packageName.$typeName")
+                    }
+                })
+            })
 
             val visitPackages = { resolutionDepth: NameResolutionVisitor.ResolutionDepth ->
                 packages.forEach({(packageName, compilationUnits) ->
@@ -1286,11 +1301,11 @@ class NameResolver {
                                 val stiPackageName = name.subList(0, name.size - 1).joinToString(".")
                                 val typeName = name.last()
 
-                                if (!typesDeclaredInPackage.contains(stiPackageName)) {
+                                if (!doesPackageExist(stiPackageName)) {
                                     throw SingleTypeImportDeclarationDetectedForNonExistentPackage(stiPackageName)
                                 }
 
-                                val typesInPackage = typesDeclaredInPackage[stiPackageName]!!
+                                val typesInPackage = getTypesDeclaredInPackage(stiPackageName)
 
                                 if (!typesInPackage.contains(typeName)) {
                                     throw SingleTypeImportDeclarationDetectedForNonExistentType(stiPackageName, typeName)
