@@ -7,8 +7,7 @@ import oj.models.FoundNoDescendant
 
 open class NameResolutionError(reason: String) : Exception(reason)
 open class HierarchyCheckingError(reason: String) : NameResolutionError(reason)
-open class UnimplementedAbstractMethodException(nonAbstractTypeName: String, abstractTypeName: String, abstractMethodName: String) : HierarchyCheckingError("Abstract method \"$abstractTypeName.$abstractMethodName\" is not implemented in class hierarchy of \"$nonAbstractTypeName\"")
-open class AbstractMethodOverridesConcreteImplementation(abstractTypeName: String, abstractMethodName: String) : HierarchyCheckingError("Abstract method \"$abstractTypeName.$abstractMethodName\" overrides non-abstract method in own class hierarchy")
+open class UnimplementedInterfaceMethodException(className: String) : HierarchyCheckingError("Non-abstract class \"$className\" has not implemented all interface methods.")
 open class ClassExtendsNonClass(className: String, interfaceName: String) : HierarchyCheckingError("Class \"$className\" extends \"$interfaceName\"")
 open class ClassImplementsNonInterface(className: String, nonInterfaceName: String) : HierarchyCheckingError("Class \"$className\" implements \"$nonInterfaceName\"")
 open class ClassImplementsAnInterfaceMoreThanOnce(className: String, interfaceName: String): HierarchyCheckingError("Class \"$className\" implements interface \"$interfaceName\" more than once.")
@@ -23,6 +22,7 @@ open class InterfaceExtendsNonInterface(interfaceName: String, nonInterfaceName:
 open class InterfaceHierarchyIsCyclic(interfaceName: String, firstDuplicateInterface: String) : HierarchyCheckingError("Detected a duplicate interface \"$firstDuplicateInterface\" in interface \"$interfaceName\"'s hierarchy.")
 open class DuplicateMethodsDetectedInInterface(interfaceName: String, methodName: String): HierarchyCheckingError("Detected a duplicate method \"$methodName\" in interface \"$interfaceName\"")
 open class TwoMethodsInInterfaceHierarchyWithSameSignatureButDifferentReturnTypes(interfaceName: String, methodName: String): HierarchyCheckingError("Two methods with the same name, \"$methodName\", but different return type exist in the interface hierarchy (including interface methods) of interface \"$interfaceName\"")
+open class UnimplementedAbstractMethodException(className: String): HierarchyCheckingError("Class \"$className\" contains an abstract method, but it is not defined abstract.")
 
 
 val isClassOrInterfaceDeclaration = { node: CSTNode ->
@@ -224,23 +224,6 @@ fun getDeclarationName(declaration: CSTNode): String {
     throw TriedToGetNameOfAnUnsupportedCSTNode(declaration.name)
 }
 
-fun ensureThatAbstractMethodsHaveImplementations(nonAbstractTypeName: String, abstractTypeName: String, abstractMethodDeclarations: List<CSTNode>, allNonAbstractInstanceMethodDeclarations: List<CSTNode>) {
-    abstractMethodDeclarations.forEach({ abstractMethodDeclaration ->
-        val abstractMethodHeader = abstractMethodDeclaration.getChild("MethodHeader")
-
-        val nonAbstractMethodsThatImplementAbstractMethod = allNonAbstractInstanceMethodDeclarations
-            .filter(fun(nonAbstractMethodDeclaration: CSTNode): Boolean {
-                val nonAbstractMethodHeader = nonAbstractMethodDeclaration.getChild("MethodHeader")
-                return canMethodHeadersReplaceOneAnother(abstractMethodHeader, nonAbstractMethodHeader)
-            })
-
-        if (nonAbstractMethodsThatImplementAbstractMethod.isEmpty()) {
-            val abstractMethodName = getDeclarationName(abstractMethodDeclaration)
-            throw UnimplementedAbstractMethodException(nonAbstractTypeName, abstractTypeName, abstractMethodName)
-        }
-    })
-}
-
 class NameResolutionVisitor(
     private val environment: Environment,
     val typesDeclaredInPackages: Map<String, Map<String, CSTNode>>
@@ -281,7 +264,7 @@ class NameResolutionVisitor(
         nameNode.setDeclaration(declaration)
     }
 
-    private fun getInterfaceInheritedMethods(interfaceDeclaration: CSTNode, typeName: String, visited: MutableSet<CSTNode>): List<CSTNode> {
+    private fun getInterfaceInheritedMethods(interfaceDeclaration: CSTNode, typeName: String, visited: MutableSet<CSTNode>): Set<CSTNode> {
         if (interfaceDeclaration.name != "InterfaceDeclaration") {
             throw HierarchyCheckingError("Expected an interface declaration but found ${interfaceDeclaration.name} instead.")
         }
@@ -300,7 +283,7 @@ class NameResolutionVisitor(
         visited.add(interfaceDeclaration)
         var extendedAbstractMethods = extendedInterfaceDeclarations.flatMap({
             getInterfaceInheritedMethods(it, typeName, visited)
-        })
+        }).toSet()
 
         visited.remove(interfaceDeclaration)
 
@@ -655,70 +638,94 @@ class NameResolutionVisitor(
         /**
          * TEST
          *
-         * For every method of every interface that this class implements, there exists an implementation
-         * in this class or its parents.
+         * If a class hasn't implemented implemented all its interface methods, then it must be abstract.
          */
-        val allNonAbstractInstanceMethodDeclarations = allMethodDeclarations.filter({ descendant ->
-            val modifiers = getModifiers(descendant.getChild("MethodHeader"))
-            "abstract" !in modifiers && "static" !in modifiers
-        })
 
-        val isClassAbstract = "abstract" in getModifiers(node)
+        val allInterfaceMethods = allImplementedInterfaces.flatMap({ getInterfaceInheritedMethods(it, className, mutableSetOf()) })
 
-        if (!isClassAbstract) {
-            allImplementedInterfaces.forEach({ implementedInterface ->
-                val interfaceName = getDeclarationName(implementedInterface)
-                val abstractMethodDeclarations = getInterfaceInheritedMethods(implementedInterface, className, mutableSetOf())
-                ensureThatAbstractMethodsHaveImplementations(className, interfaceName, abstractMethodDeclarations, allNonAbstractInstanceMethodDeclarations)
+        fun areInterfaceMethodsImplemented(classDeclaration: CSTNode, unimplementedInterfaceMethods: List<CSTNode>): Boolean {
+            val abstractMethods = classDeclaration.getDescendants("MethodDeclaration").filter({ "abstract" in getModifiers(it) })
+
+            val completelyUnimplementedAbstractInteraceMethods = unimplementedInterfaceMethods.filter({ unimplementedInterfaceMethod ->
+                abstractMethods.filter({ abstractMethod ->
+                    canMethodHeadersReplaceOneAnother(abstractMethod.getChild("MethodHeader"), unimplementedInterfaceMethod.getChild("MethodHeader"))
+                }).isNotEmpty()
             })
-        }
 
-        /**
-         * TEST
-         *
-         * For every abstract method in this class's hierarchy, there exists a concrete implementation
-         * in this class or its parents.
-         */
-        val allAbstractMethodDeclarations = allMethodDeclarations.filter({ descendant ->
-            "abstract" in getModifiers(descendant.getChild("MethodHeader"))
-        })
+            if (completelyUnimplementedAbstractInteraceMethods.isNotEmpty()) {
+                return false
+            }
 
-        if (!isClassAbstract) {
-            ensureThatAbstractMethodsHaveImplementations(className, "SOME ABSTRACT SUPER CLASS OF \"${className}\"", allAbstractMethodDeclarations, allNonAbstractInstanceMethodDeclarations)
-        }
+            val concreteMethods = classDeclaration.getDescendants("MethodDeclaration").filter({ "static" !in getModifiers(it) && "abstract" !in getModifiers(it) })
+            val remainingUnimplementedAbstractInterfaceMethods = unimplementedInterfaceMethods.filter({ unimplementedInterfaceMethod ->
+                concreteMethods.filter({ concreteMethod ->
+                    canMethodHeadersReplaceOneAnother(concreteMethod.getChild("MethodHeader"), unimplementedInterfaceMethod.getChild("MethodHeader"))
+                }).isEmpty()
+            })
 
-        /**
-         * TEST
-         *
-         * If this class is abstract class:
-         *  For every abstract method in this class, there should not exist a concrete implementation in this class's
-         *  parents.
-         */
-        val allInheritedMethodDeclarations = allMethodDeclarations.filter({ descendant ->
-            ownMethodDeclarations.filter({ ownMethodDeclaration ->
-                ownMethodDeclaration !== descendant
-            }).isEmpty()
-        })
+            val superNames = classDeclaration.getChild("SuperOpt").getDescendants("Name")
 
-        if (isClassAbstract) {
-            val ownAbstractMethodDeclarations = ownMethodDeclarations.filter({ "abstract" in getModifiers(it)})
-            ownAbstractMethodDeclarations.forEach({ ownAbstractMethodDeclaration ->
-                val ownAbstractMethodHeader = ownAbstractMethodDeclaration.getChild("MethodHeader")
-
-                allInheritedMethodDeclarations.forEach(fun(inheritedMethodDeclaration: CSTNode) {
-                    val inheritedMethodHeader = inheritedMethodDeclaration.getChild("MethodHeader")
-
-                    if (ownAbstractMethodDeclaration === inheritedMethodDeclaration) {
-                        return
+            if (superNames.isEmpty()) {
+                val baseSuperClassConcreteMethods =
+                    if (importOnDemandDeclarationEnvironment.contains("Object")) {
+                        val baseSuperClass = importOnDemandDeclarationEnvironment.find("Object")
+                        val baseSuperClassClassBody = baseSuperClass.getChild("ClassBody")
+                        baseSuperClassClassBody.getDescendants("MethodDeclaration")
+                    } else {
+                        listOf()
                     }
 
-                    if (canMethodHeadersReplaceOneAnother(inheritedMethodHeader, ownAbstractMethodHeader)) {
-                        val inheritedMethodName = getDeclarationName(inheritedMethodDeclaration)
-                        throw AbstractMethodOverridesConcreteImplementation(className, inheritedMethodName)
-                    }
+                val finalUnimplementedAbstractInterfaceMethods = remainingUnimplementedAbstractInterfaceMethods.filter({ unimplementedInterfaceMethod ->
+                    baseSuperClassConcreteMethods.filter({ concreteMethod ->
+                        canMethodHeadersReplaceOneAnother(concreteMethod.getChild("MethodHeader"), unimplementedInterfaceMethod.getChild("MethodHeader"))
+                    }).isEmpty()
                 })
-            })
+
+                return finalUnimplementedAbstractInterfaceMethods.isEmpty()
+            } else {
+                val superClassDeclaration = superNames[0].getDeclaration()
+                return areInterfaceMethodsImplemented(superClassDeclaration, remainingUnimplementedAbstractInterfaceMethods)
+            }
         }
+
+        if (!areInterfaceMethodsImplemented(node, allInterfaceMethods)) {
+            if ("abstract" !in getModifiers(node)) {
+                throw UnimplementedInterfaceMethodException(className)
+            }
+        }
+
+        /**
+         * TEST
+         *
+         * A class that contains any abstract methods must be abstract.
+         */
+
+        fun ensureClassThatContainsAbstractMethodIsAbstract(classDeclaration: CSTNode, concreteMethodsSeenSoFar: List<CSTNode>) {
+            val abstractMethods = classDeclaration.getDescendants("MethodDeclaration").filter({ "abstract" in getModifiers(it) })
+            val foundUnimplementedAbstractMethod = abstractMethods.filter({ abstractMethod ->
+                concreteMethodsSeenSoFar.filter({ concreteMethod ->
+                    canMethodHeadersReplaceOneAnother(abstractMethod.getChild("MethodHeader"), concreteMethod.getChild("MethodHeader"))
+                }).isEmpty()
+            }).isNotEmpty()
+
+            if (foundUnimplementedAbstractMethod) {
+                if ("abstract" !in getModifiers(node)) {
+                    throw UnimplementedAbstractMethodException(className)
+                }
+            } else {
+                val concreteMethods = classDeclaration.getDescendants("MethodDeclaration").filter({ "static" !in getModifiers(it) && "abstract" !in getModifiers(it) })
+                val superNames = classDeclaration.getChild("SuperOpt").getDescendants("Name")
+                if (superNames.isEmpty()) {
+                    return
+                } else {
+                    val superClassDeclaration = superNames[0].getDeclaration()
+                    return ensureClassThatContainsAbstractMethodIsAbstract(superClassDeclaration, concreteMethodsSeenSoFar + concreteMethods)
+                }
+
+            }
+        }
+
+        ensureClassThatContainsAbstractMethodIsAbstract(node, listOf())
 
 
         /**

@@ -1052,7 +1052,7 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
     }
 
     it("should not allow non-abstract classes that don't implement all methods of their interfaces") {
-        assertFailsWith(UnimplementedAbstractMethodException::class, {
+        assertFailsWith(UnimplementedInterfaceMethodException::class, {
             subject(listOf(
                 """
                     public class A implements B {
@@ -1071,6 +1071,37 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
                 """
                     public interface C {
                         public void sayHiC(B b);
+                    }
+                """.trimIndent()
+            ))
+        })
+    }
+
+    it("should reject classes where abstract method shadows concrete implementation of interface method") {
+        assertFailsWith(UnimplementedInterfaceMethodException::class, {
+            subject(listOf(
+                """
+                    public class A extends B implements Foo {
+                        public A() {}
+                    }
+                """.trimIndent(),
+                """
+                    public abstract class B extends C {
+                        public B() {}
+                        public abstract int foo();
+                    }
+                """.trimIndent(),
+                """
+                    public class C {
+                        public C() {}
+                        public int foo() {
+                            return 1;
+                        }
+                    }
+                """.trimIndent(),
+                """
+                    public interface Foo {
+                        public int foo();
                     }
                 """.trimIndent()
             ))
