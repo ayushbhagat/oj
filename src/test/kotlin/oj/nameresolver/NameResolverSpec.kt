@@ -1052,7 +1052,7 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
     }
 
     it("should not allow non-abstract classes that don't implement all methods of their interfaces") {
-        assertFailsWith(UnimplementedInterfaceMethodException::class, {
+        assertFailsWith(UnimplementedAbstractOrInterfaceMethodException::class, {
             subject(listOf(
                 """
                     public class A implements B {
@@ -1078,7 +1078,7 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
     }
 
     it("should reject classes where abstract method shadows concrete implementation of interface method") {
-        assertFailsWith(UnimplementedInterfaceMethodException::class, {
+        assertFailsWith(UnimplementedAbstractOrInterfaceMethodException::class, {
             subject(listOf(
                 """
                     public class A extends B implements Foo {
@@ -1109,7 +1109,7 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
     }
 
     it("should not allow non-abstract classes that don't implement all methods of their abstract parents") {
-        assertFailsWith(UnimplementedAbstractMethodException::class, {
+        assertFailsWith(UnimplementedAbstractOrInterfaceMethodException::class, {
             subject(listOf(
                 """
                     public class A extends B {
@@ -1380,7 +1380,7 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
     }
 
     it("should not allow non-abstract classes that inherit but don't implement abstract methods") {
-        assertFailsWith(UnimplementedAbstractMethodException::class, {
+        assertFailsWith(UnimplementedAbstractOrInterfaceMethodException::class, {
             subject(listOf(
                 """
                     public class A extends B {
@@ -1545,6 +1545,54 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
 
                     public class String {
                         public String() {}
+                    }
+                """.trimIndent()
+            ))
+        })
+    }
+
+    it("should not allow interfaces to override final methods that it inherits from Object") {
+        assertFailsWith(IllegalMethodReplacement::class, {
+            subject(listOf(
+                """
+                    public interface A extends B {
+                        public int toInt();
+                    }
+                """.trimIndent(),
+                """
+                    public interface B {
+                    }
+                """.trimIndent(),
+                """
+                    package java.lang;
+
+                    public class Object {
+                        public Object() {}
+
+                        public final int toInt() {}
+                    }
+                """.trimIndent()
+            ))
+        })
+    }
+
+    it("should not allow abstract method to override method from its sibling interface and change type from public to protected") {
+        assertFailsWith(ConcreteMethodImplementsPublicMethodWithProtectedVisibility::class, {
+            subject(listOf(
+                """
+                    public class A extends B implements C {
+                        public A() {}
+                    }
+                """.trimIndent(),
+                """
+                    public abstract class B {
+                        public B() {}
+                        protected void b(int b1) {}
+                    }
+                """.trimIndent(),
+                """
+                    public interface C {
+                        public void b(int b1);
                     }
                 """.trimIndent()
             ))
