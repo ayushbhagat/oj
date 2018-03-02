@@ -7,7 +7,6 @@ import oj.parser.Parser
 import oj.scanner.BASE_DFA_NAMES
 import oj.scanner.SCANNER_DFA
 import oj.scanner.Scanner
-import oj.weeder.MethodIsAbstractOrNativeIFFItHasNoMethodBodyWeeder
 import oj.weeder.Weeder
 import org.jetbrains.spek.api.dsl.*
 import org.jetbrains.spek.subject.SubjectSpek
@@ -74,20 +73,22 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
 
     describe("single type import declaration") {
         it("should be supported") {
-            subject(listOf("""
-            // Default package
-            import temp.A;
+            subject(listOf(
+                """
+                    import temp.A;
 
-            public class B extends A {
-               public B() {}
-            }
-        """, """
-            package temp;
+                    public class B extends A {
+                       public B() {}
+                    }
+                """.trimIndent(),
+                """
+                    package temp;
 
-            public class A {
-               public A() {}
-            }
-        """))
+                    public class A {
+                       public A() {}
+                    }
+                """.trimIndent()
+            ))
         }
 
         it("should reject usages of classes that haven't been imported") {
@@ -188,19 +189,19 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
             assertFailsWith(DetectedTwoTypesWithSameNameInSamePackage::class, {
                 subject(listOf(
                     """
-            import test.A;
+                        import test.A;
 
-            public class A {
-                public A() {}
-            }
-        """,
+                        public class A {
+                            public A() {}
+                        }
+                    """.trimIndent(),
                     """
-            package test;
+                        package test;
 
-            public class A {
-                public A() {}
-            }
-        """
+                        public class A {
+                            public A() {}
+                        }
+                    """.trimIndent()
                 ))
             })
         }
@@ -487,15 +488,15 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
     describe("fields") {
         it("should not allow 2 fields to have the same name in the same class") {
             assertFailsWith(NameResolutionError::class, {
-            subject(listOf(
+                subject(listOf(
                     """
-            public class A {
-                public int a = 0;
-                public int a = 10;
+                        public class A {
+                            public int a = 0;
+                            public int a = 10;
 
-                public A() {}
-            }
-            """
+                            public A() {}
+                        }
+                    """.trimIndent()
                 ))
             })
         }
@@ -803,16 +804,16 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
         it("should be able to access static methods in instance method") {
             subject(listOf(
                 """
-            public class A {
-                public A() {}
+                public class A {
+                    public A() {}
 
-                public void b() {
-                    staticMethod();
+                    public void b() {
+                        staticMethod();
+                    }
+
+                    public static void staticMethod() {}
                 }
-
-                public static void staticMethod() {}
-            }
-            """
+                """.trimIndent()
             ))
         }
 
@@ -964,7 +965,7 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
     }
 
     it("should not allow a class to extend an interface") {
-        assertFailsWith(HierarchyCheckingError::class, {
+        assertFailsWith(ClassExtendsNonClass::class, {
             subject(listOf(
                 """
                     public class A extends B {
@@ -980,7 +981,7 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
     }
 
     it("should not allow a class to implement another class") {
-        assertFailsWith(HierarchyCheckingError::class, {
+        assertFailsWith(ClassImplementsNonInterface::class, {
             subject(listOf(
                 """
                     public class A implements B {
@@ -996,8 +997,8 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
         })
     }
 
-    it("should not permit interfaces to be repeated in an implements clause of a class declaration") {
-        assertFailsWith(HierarchyCheckingError::class, {
+    it("should not allow interfaces to be repeated in an implements clause of a class declaration") {
+        assertFailsWith(ClassImplementsAnInterfaceMoreThanOnce::class, {
             subject(listOf(
                 """
                     import test.*;
@@ -1021,8 +1022,8 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
         })
     }
 
-    it("should ensure that classes implement all methods of their interfaces") {
-        assertFailsWith(UnimplementedInterfaceException::class, {
+    it("should not allow non-abstract classes that don't implement all methods of their interfaces") {
+        assertFailsWith(UnimplementedAbstractMethodException::class, {
             subject(listOf(
                 """
                     public class A implements B {
@@ -1041,6 +1042,27 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
                 """
                     public interface C {
                         public void sayHiC(B b);
+                    }
+                """.trimIndent()
+            ))
+        })
+    }
+
+    it("should not allow non-abstract classes that don't implement all methods of their abstract parents") {
+        assertFailsWith(UnimplementedAbstractMethodException::class, {
+            subject(listOf(
+                """
+                    public class A extends B {
+                        public A() {}
+                        public int toInt() {
+                            return 1;
+                        }
+                    }
+                """.trimIndent(),
+                """
+                    abstract public class B {
+                        public B() {}
+                        abstract public void foo();
                     }
                 """.trimIndent()
             ))
@@ -1069,8 +1091,8 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
         ))
     }
 
-    it("should not permit interfaces to be repeated in the extends clause of an interface declaration") {
-        assertFailsWith(HierarchyCheckingError::class, {
+    it("should not allow interfaces to be repeated in the extends clause of an interface declaration") {
+        assertFailsWith(InterfaceExtendsAnotherMoreThanOnce::class, {
             subject(listOf(
                 """
                     public interface A extends B, C, B {
@@ -1090,16 +1112,19 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
         })
     }
 
-    it("should no allow a class to extend a final class") {
-        assertFailsWith(HierarchyCheckingError::class, {
+    it("should not allow a class to extend a final class") {
+        assertFailsWith(ClassExtendsFinalSuperClass::class, {
             subject(listOf(
                 """
-                    public interface A extends B, C, B {
+                    public class A extends B implements C {
+                        public A() {}
+                        public void sayHiC() {}
                     }
                 """.trimIndent(),
                 """
-                    public interface B {
-                        public void sayHiB();
+                    public final class B {
+                        public B() {}
+                        public void sayHiB() {}
                     }
                 """.trimIndent(),
                 """
@@ -1112,7 +1137,7 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
     }
 
     it("should not allow an interface to extend a class") {
-        assertFailsWith(HierarchyCheckingError::class, {
+        assertFailsWith(InterfaceExtendsNonInterface::class, {
             subject(listOf(
                 """
                     public interface A extends B {
@@ -1128,7 +1153,7 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
     }
 
     it("should not allow cycles in the interface hierarchy") {
-        assertFailsWith(HierarchyCheckingError::class, {
+        assertFailsWith(InterfaceHierarchyIsCyclic::class, {
             subject(listOf(
                 """
                     public interface A extends B {
@@ -1150,7 +1175,7 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
     }
 
     it("should not allow an interface to extend itself") {
-        assertFailsWith(HierarchyCheckingError::class, {
+        assertFailsWith(InterfaceHierarchyIsCyclic::class, {
             subject(listOf(
                 """
                     public interface A extends A {
@@ -1162,7 +1187,7 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
     }
 
     it("should not allow cycles in the class hierarchy") {
-        assertFailsWith(HierarchyCheckingError::class, {
+        assertFailsWith(ClassHierarchyIsCyclic::class, {
             subject(listOf(
                 """
                     public class A extends B {
@@ -1184,7 +1209,7 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
     }
 
     it("should not allow a class to extend itself") {
-        assertFailsWith(HierarchyCheckingError::class, {
+        assertFailsWith(ClassHierarchyIsCyclic::class, {
             subject(listOf(
                 """
                     public class A extends A {
@@ -1196,7 +1221,7 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
     }
 
     it("should not allow a class to declare two methods with the same signature") {
-        assertFailsWith(NameResolutionError::class, {
+        assertFailsWith(DuplicateMethodsDetectedInClass::class, {
             subject(listOf(
                 """
                     public class A {
@@ -1216,7 +1241,7 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
     }
 
     it("should not allow an interface to declare two methods with the same signature") {
-        assertFailsWith(NameResolutionError::class, {
+        assertFailsWith(DuplicateMethodsDetectedInInterface::class, {
             subject(listOf(
                 """
                     public interface A {
@@ -1234,7 +1259,7 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
     }
 
     it("should not allow a class to declare two or more constructors with the same signatures") {
-        assertFailsWith(HierarchyCheckingError::class, {
+        assertFailsWith(DuplicateConstructorsDetectedInClass::class, {
             subject(listOf(
                 """
                     package horse;
@@ -1256,14 +1281,8 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
         })
     }
 
-    /**
-     * A class or interface must not contain (declare or inherit) two methods with the same signature but different return types
-     *
-     * TODO: Are the following two tests sufficient to resolve this problem?
-     */
-
     it("should not allow a class to override a method D with E if the return types of D and E are different") {
-        assertFailsWith(HierarchyCheckingError::class, {
+        assertFailsWith(TwoMethodsInClassHierarchyWithSameSignatureButDifferentReturnTypes::class, {
             subject(listOf(
                 """
                     public class A extends B {
@@ -1284,7 +1303,7 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
     }
 
     it("should not allow an interface to override a method D with E if the return types of D and E are different") {
-        assertFailsWith(HierarchyCheckingError::class, {
+        assertFailsWith(TwoMethodsInInterfaceHierarchyWithSameSignatureButDifferentReturnTypes::class, {
             subject(listOf(
                 """
                     public interface A extends B {
@@ -1300,8 +1319,8 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
         })
     }
 
-    it("should require classes that inherit but don't implement abstract methods to be marked abstract") {
-        assertFailsWith(HierarchyCheckingError::class, {
+    it("should not allow non-abstract classes that inherit but don't implement abstract methods") {
+        assertFailsWith(UnimplementedAbstractMethodException::class, {
             subject(listOf(
                 """
                     public class A extends B {
@@ -1316,12 +1335,6 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
                 """.trimIndent()
                 ))
         })
-    }
-
-    it("should not allow a non-static method to replace a static method") {
-        // TODO: Run test, print and inspect CST
-
-        assert(false)
     }
 
     it("should allow an interface method to override a superinterface method if return types are same") {
@@ -1339,9 +1352,48 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
         ))
     }
 
+    it("should not allow a non-static method to replace a static method") {
+        assertFailsWith(IllegalMethodReplacement::class, {
+            subject(listOf(
+                """
+                    public class A {
+                        public A() {}
+	                    public static void foo() {}
+                    }
+                """.trimIndent(),
+                """
+                    public class B extends A {
+                        public B() {}
+                        public void foo() {}
+                    }
+                """.trimIndent()
+            ))
+        })
+    }
+
+    it("should not allow a static method to replace a non-static method") {
+        assertFailsWith(IllegalMethodReplacement::class, {
+            subject(listOf(
+                """
+                    public class A {
+                        public A() {}
+	                    public void foo() {}
+                    }
+                """.trimIndent(),
+                """
+                    public class B extends A {
+                        public B() {}
+                        public static void foo() {}
+                    }
+                """.trimIndent()
+            ))
+        })
+    }
+
+
 
     it("should not allow a protected method to override a public method in classes") {
-        assertFailsWith(HierarchyCheckingError::class, {
+        assertFailsWith(IllegalMethodReplacement::class, {
             subject(listOf(
                 """
                     public class A {
@@ -1360,7 +1412,7 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
     }
 
     it("should not allow a class method to replace a final method") {
-        assertFailsWith(HierarchyCheckingError::class, {
+        assertFailsWith(IllegalMethodReplacement::class, {
             subject(listOf(
                 """
                     public class A {
