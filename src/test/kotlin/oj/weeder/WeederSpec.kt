@@ -666,4 +666,31 @@ object WeederSpec : SubjectSpek<(String) -> CSTNode>({
         }
     }
 
+    it("should not allow single name import to conflict with current class") {
+        assertFailsWith(ImportWeeder.SingleNameImportImportsSameTypeAsIsDeclared::class, {
+            subject("""
+                import test.A;
+
+                public class A {
+                    public A() {}
+                }
+            """.trimIndent())
+        })
+    }
+
+    it("should not allow 2 single name imports") {
+        val program = """|
+            |import test.B;
+            |import test.util.B;
+            |
+            |public class A {
+            |   public A() {}
+            |}
+        """.trimMargin()
+
+        assertFailsWith(ImportWeeder.DuplicateSingleNameImport::class, {
+            subject(program)
+        })
+    }
+
 })
