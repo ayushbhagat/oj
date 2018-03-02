@@ -363,12 +363,46 @@ class NameResolutionVisitor(
                 throw NameResolutionError("Tried to access type \"$typeName\" in package \"$packageName\", but package \"$packageName\" doesn't exist.")
             }
 
+            /**
+             * Ensure that no strict prefix of a qualified type is a package that contains types.
+             *
+             * If foo.bar.baz.A a = new foo.bar.baz.A() then:
+             *  - foo can't have types
+             *  - foo.bar can't have types
+             *  - foo.bar.baz can have types (ex: foo.bar.baz.A)
+             */
+
             for (i in IntRange(1, pkg.size - 1)) {
                 val prefix = pkg.subList(0, i)
                 val prefixPackageName = prefix.joinToString(".")
 
                 if (typesDeclaredInPackages.containsKey(prefixPackageName)) {
                     throw NameResolutionError("Prefix \"$prefixPackageName\" of a package \"$packageName\" used to resolve type \"$typeName\" contained a type.")
+                }
+            }
+
+            /**
+             * Ensure that no strict prefix of a qualified type is a type itself.
+             *
+             * If foo.bar.baz.A a = new foo.bar.baz.A() then:
+             *  - foo can't be a type
+             *  - foo.bar can't be a type
+             *  - foo.bar.baz can't be a type
+             */
+            for (i in IntRange(0, pkg.size - 1)) {
+                val prefix = pkg.subList(0, i + 1)
+
+                if (prefix.size == 1) {
+                    if (environment.contains(prefix[0]) || importOnDemandDeclarationEnvironment.contains(prefix[0])) {
+                        throw NameResolutionError("Prefix \"${prefix[0]}\" of qualified type \"${name.joinToString(".")}\" is a type")
+                    }
+                } else {
+                    val prefixPrefixPkg = prefix.subList(0, prefix.size - 1)
+                    val prefixType = prefix.last()
+
+                    if (typesDeclaredInPackages.contains(prefixPrefixPkg.joinToString(".")) && typesDeclaredInPackages[prefixPrefixPkg.joinToString(".")]!!.contains(prefixType)) {
+                        throw NameResolutionError("Prefix \"${prefix.joinToString(".")}\" of qualified type \"${name.joinToString(".")}\" is a type")
+                    }
                 }
             }
 
@@ -802,7 +836,7 @@ class NameResolutionVisitor(
         /**
          * Instance methods.
          */
-        val ownInstanceMethodDeclarations = allStaticMethodDeclarations.filter({ otherDeclaration ->
+        val ownInstanceMethodDeclarations = allInstanceMethodDeclarations.filter({ otherDeclaration ->
             ownMethodDeclarations.filter({ it === otherDeclaration }).isNotEmpty()
         })
         ownInstanceMethodDeclarations.forEach(resolveMethodBody)
@@ -1250,8 +1284,9 @@ class NameResolver {
 
             packages.forEach({(packageName, _) ->
                 getTypesDeclaredInPackage(packageName).forEach({(typeName, _) ->
-                    if (doesPackageExist("$packageName.$typeName")) {
-                        throw EitherPackageNameOrQualifiedType("$packageName.$typeName")
+                    val qualifiedTypeName = "$packageName.$typeName"
+                    if (doesPackageExist(qualifiedTypeName)) {
+                        throw EitherPackageNameOrQualifiedType(qualifiedTypeName)
                     }
                 })
             })

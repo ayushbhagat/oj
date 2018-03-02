@@ -6,7 +6,6 @@ import oj.models.CSTNodeVisitor
 class PackageImportWeeder : CSTNodeVisitor() {
     class SingleNameImportImportsSameTypeAsIsDeclared(typeName: String) : WeedError("Tried to import type \"$typeName\" in a file where a type with the same name is declared.")
     class DuplicateSingleNameImport(typeName: String) : WeedError("Two single-name-import declarations import the same type \"$typeName\"")
-    class PackageNameIsTypeName(typeName: String): WeedError("Package has same name \"$typeName\" as type declared")
 
     val singleNameImportedTypes = mutableSetOf<List<String>>()
     var packageName = ""
@@ -53,10 +52,6 @@ class PackageImportWeeder : CSTNodeVisitor() {
 
     private fun validateTypeDeclaration(node: CSTNode) {
         val typeName = node.getChild("IDENTIFIER").lexeme
-
-        if (typeName == packageName) {
-            throw PackageNameIsTypeName(typeName)
-        }
 
         singleNameImportedTypes.forEach(fun (importedType: List<String>) {
             if (importedType.joinToString(".") == qualifyTypeName(typeName)) {

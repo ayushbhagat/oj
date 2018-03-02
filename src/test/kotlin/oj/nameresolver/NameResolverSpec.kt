@@ -411,6 +411,25 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
             })
         }
 
+        it("should not allow a class in the default package to have the same name as a package") {
+            assertFailsWith(EitherPackageNameOrQualifiedType::class, {
+                subject(listOf(
+                    """
+                    package B;
+
+                    public class A {
+                        public A() {}
+                    }
+                    """.trimIndent(),
+                    """
+                    public class B {
+                        public B() {}
+                    }
+                    """.trimIndent()
+                ))
+            })
+        }
+
         it("should not allow import on demand declarations for a package that doesn't exist even if its a string prefix of some package that does exist") {
             assertFailsWith(ImportOnDemandDeclarationDetectedForNonExistentPackage::class, {
                 subject(listOf(
@@ -1455,5 +1474,23 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
                 }
             """.trimIndent()
         ))
+    }
+
+    it("should not allow the prefix of a fully qualified type to be a type") {
+        assertFailsWith(NameResolutionError::class, {
+            subject(listOf(
+                """
+                    package A;
+
+                public class A {
+                    public A() {}
+
+                    public void test() {
+                        new A.A();
+                    }
+                }
+            """.trimIndent()
+            ))
+        })
     }
 })

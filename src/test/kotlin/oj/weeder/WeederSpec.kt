@@ -702,9 +702,7 @@ object WeederSpec : SubjectSpek<(String) -> CSTNode>({
             |}
         """.trimMargin()
 
-        assertFailsWith(PackageImportWeeder.PackageNameIsTypeName::class, {
-            subject(program)
-        })
+        subject(program)
     }
 
     it("should not allow interface and package name to be the same") {
@@ -715,9 +713,7 @@ object WeederSpec : SubjectSpek<(String) -> CSTNode>({
             |}
         """.trimMargin()
 
-        assertFailsWith(PackageImportWeeder.PackageNameIsTypeName::class, {
-            subject(program)
-        })
+        subject(program)
     }
 
 })
