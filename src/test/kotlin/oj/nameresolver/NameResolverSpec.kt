@@ -73,7 +73,7 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
     }
 
     describe("single type import declaration") {
-        xit("should be supported") {
+        it("should be supported") {
             subject(listOf("""
             // Default package
             import temp.A;
@@ -90,7 +90,7 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
         """))
         }
 
-        xit("should reject usages of classes that haven't been imported") {
+        it("should reject usages of classes that haven't been imported") {
             assertFailsWith(NameResolutionError::class, {
                 subject(listOf("""
                 import temp.A;
@@ -109,7 +109,7 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
         }
 
 
-        xit("should shadow import on demand declarations") {
+        it("should shadow import on demand declarations") {
             subject(listOf(
                 """
                     import temp.*;
@@ -136,7 +136,7 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
             ))
         }
 
-        xit("should allow single type import to shadow a class from default package") {
+        it("should allow single type import to shadow a class from default package") {
             subject(listOf(
                 """
                 import test.B;
@@ -163,7 +163,7 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
         }
 
 
-        xit("should not allow importing 2 classes with the same canonical name") {
+        it("should not allow importing 2 classes with the same canonical name") {
             assertFailsWith(DetectedTwoTypesWithSameNameInSamePackage::class, {
                 subject(listOf(
                     """
@@ -184,7 +184,7 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
             })
         }
 
-        xit("should not allow single name import to conflict with current class") {
+        it("should not allow single name import to conflict with current class") {
             assertFailsWith(DetectedTwoTypesWithSameNameInSamePackage::class, {
                 subject(listOf(
                     """
@@ -205,7 +205,7 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
             })
         }
 
-        xit("should not allow 2 single name imports") {
+        it("should not allow 2 single name imports") {
             assertFailsWith(DetectedTwoTypesWithSameNameInSamePackage::class, {
                 subject(listOf(
                     """
@@ -237,7 +237,7 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
 
 
     describe("import on demand declarations") {
-        xit("should not raise an error when another import on demand declaration contains the same type and the type is unused") {
+        it("should not raise an error when another import on demand declaration contains the same type and the type is unused") {
             subject(listOf(
                 """
                     import temp.*;
@@ -264,7 +264,7 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
             ))
         }
 
-        xit("should raise an error when another import on demand declaration contains the same type and the type is used") {
+        it("should raise an error when another import on demand declaration contains the same type and the type is used") {
             assertFailsWith(NameResolutionError::class, {
                 subject(listOf(
                     """
@@ -293,7 +293,7 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
             })
         }
 
-        xit("should allow imports of prefixes of packages") {
+        it("should allow imports of prefixes of packages") {
             subject(listOf(
                 """
                 import java.*;
@@ -312,7 +312,7 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
             ))
         }
 
-        xit("should allow importing class from prefix of a package and a IOD from package without use") {
+        it("should allow importing class from prefix of a package and a IOD from package without use") {
             subject(listOf(
                 """
                 import java.B;
@@ -339,7 +339,7 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
             ))
         }
 
-        xit("should allow importing class from prefix of a package and a IOD from package with use") {
+        it("should allow importing class from prefix of a package and a IOD from package with use") {
             subject(listOf(
                 """
             import java.B;
@@ -368,7 +368,7 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
             ))
         }
 
-        xit("should support duplicate input on demand declarations for regular packages") {
+        it("should support duplicate input on demand declarations for regular packages") {
             subject(listOf(
                 """
                 import java.util.*;
@@ -397,7 +397,7 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
             ))
         }
 
-        xit("should support input on demand declarations for \"java.lang\" packages") {
+        it("should support input on demand declarations for \"java.lang\" packages") {
             subject(listOf(
                 """
                 import java.lang.*;
@@ -418,7 +418,7 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
             ))
         }
 
-        xit("should support duplicate input on demand declarations for \"java.lang\" packages") {
+        it("should support duplicate input on demand declarations for \"java.lang\" packages") {
             subject(listOf(
                 """
                 import java.lang.*;
@@ -442,7 +442,7 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
     }
 
     describe("import on default package types") {
-        xit("should automatically import classes from the default package") {
+        it("should automatically import classes from the default package") {
             subject(listOf(
                 """
             public class A extends C {
@@ -464,7 +464,7 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
             ))
         }
 
-        xit("should import Object without explicitly importing java.lang.*") {
+        it("should import Object without explicitly importing java.lang.*") {
             subject(listOf(
                 """
             public class A {
@@ -485,7 +485,7 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
     }
 
     describe("fields") {
-        xit("should not allow 2 fields to have the same name in the same class") {
+        it("should not allow 2 fields to have the same name in the same class") {
             assertFailsWith(NameResolutionError::class, {
             subject(listOf(
                     """
@@ -500,7 +500,7 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
             })
         }
 
-        xit("should allow 2 fields to have the same name if one of them is in a parent class") {
+        it("should allow 2 fields to have the same name if one of them is in a parent class") {
             subject(listOf(
                 """
             public class A extends B {
@@ -519,7 +519,7 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
             ))
         }
 
-        xit("should allow using a parent class field") {
+        it("should allow using a parent class field") {
             subject(listOf(
                 """
             public class A extends B {
@@ -538,7 +538,7 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
             ))
         }
 
-        xit("should allow using a static parent class field") {
+        it("should allow using a static parent class field") {
             subject(listOf(
                 """
             public class A extends B {
@@ -557,7 +557,7 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
             ))
         }
 
-        xit("should not be able to access instance fields in static method") {
+        it("should not be able to access instance fields in static method") {
             assertFailsWith(Environment.LookupFailed::class, {
                 subject(listOf(
                     """
@@ -575,7 +575,7 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
             })
         }
 
-        xit("should be able to access static fields in instance method") {
+        it("should be able to access static fields in instance method") {
             subject(listOf(
                 """
             public class A {
@@ -591,7 +591,7 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
             ))
         }
 
-        xit("should be able to access grandparents field") {
+        it("should be able to access grandparents field") {
             subject(listOf(
                 """
             public class A extends B {
@@ -615,7 +615,7 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
             ))
         }
 
-        xit("should allow local variable to have the same name as field") {
+        it("should allow local variable to have the same name as field") {
             subject(listOf(
                 """
             public class A {
@@ -628,7 +628,7 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
             ))
         }
 
-        xit("should allow formal parameter to have the same name as field") {
+        it("should allow formal parameter to have the same name as field") {
             subject(listOf(
                 """
             public class A {
@@ -640,7 +640,7 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
             ))
         }
 
-        xit("should not allow local variable to have the same name as formal parameters") {
+        it("should not allow local variable to have the same name as formal parameters") {
             assertFailsWith(NameResolutionError::class, {
                 subject(listOf(
                     """
@@ -654,7 +654,7 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
             })
         }
 
-        xit("should not allow a local variable to shadow another") {
+        it("should not allow a local variable to shadow another") {
             assertFailsWith(NameResolutionError::class, {
                 subject(listOf(
                     """
@@ -673,7 +673,7 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
     }
 
     describe("methods") {
-        xit("should not allow 2 methods to have the same name and same parameter types in the same class") {
+        it("should not allow 2 methods to have the same name and same parameter types in the same class") {
             assertFailsWith(NameResolutionError::class, {
                 subject(listOf(
                     """
@@ -688,7 +688,7 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
             })
         }
 
-        xit("should not allow 2 methods to have the same name and parameters that resolve to the same type in the same class") {
+        it("should not allow 2 methods to have the same name and parameters that resolve to the same type in the same class") {
             assertFailsWith(NameResolutionError::class, {
                 subject(listOf(
                     """
@@ -712,7 +712,7 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
             })
         }
 
-        xit("should allow 2 methods to have the same name and parameter types if one of them is in a parent class") {
+        it("should allow 2 methods to have the same name and parameter types if one of them is in a parent class") {
             subject(listOf(
                 """
             public class A extends B {
@@ -731,7 +731,7 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
             ))
         }
 
-        xit("should allow 2 methods to have the same name if they have different formal parameters") {
+        it("should allow 2 methods to have the same name if they have different formal parameters") {
             subject(listOf(
                 """
             public class A {
@@ -744,7 +744,7 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
             ))
         }
 
-        xit("should allow calling a parent class method") {
+        it("should allow calling a parent class method") {
             subject(listOf(
                 """
             public class A extends B {
@@ -763,7 +763,7 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
             ))
         }
 
-        xit("should allow calling a static parent class method") {
+        it("should allow calling a static parent class method") {
             subject(listOf(
                 """
             public class A extends B {
@@ -782,7 +782,7 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
             ))
         }
 
-        xit("should not be able to access instance methods in static method") {
+        it("should not be able to access instance methods in static method") {
             assertFailsWith(Environment.LookupFailed::class, {
                 subject(listOf(
                     """
@@ -800,7 +800,7 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
             })
         }
 
-        xit("should be able to access static methods in instance method") {
+        it("should be able to access static methods in instance method") {
             subject(listOf(
                 """
             public class A {
@@ -816,7 +816,7 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
             ))
         }
 
-        xit("should be able to access grandparents methods") {
+        it("should be able to access grandparents methods") {
             subject(listOf(
                 """
             public class A extends B {
@@ -840,7 +840,7 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
             ))
         }
 
-        xit("should not allow duplicate method declarations in interfaces") {
+        it("should not allow duplicate method declarations in interfaces") {
             assertFailsWith(NameResolutionError::class, {
                 subject(listOf(
                     """
@@ -853,7 +853,7 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
             })
         }
 
-        xit("should not allow duplicate method declarations with arguments in interfaces") {
+        it("should not allow duplicate method declarations with arguments in interfaces") {
             assertFailsWith(NameResolutionError::class, {
                 subject(listOf(
                     """
@@ -871,7 +871,7 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
             })
         }
 
-        xit("should not allow class method arguments to have the same name") {
+        it("should not allow class method arguments to have the same name") {
             assertFailsWith(NameResolutionError::class, {
                 subject(listOf(
                     """
@@ -884,7 +884,7 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
             })
         }
 
-        xit("should not allow class constructor arguments to have the same name") {
+        it("should not allow class constructor arguments to have the same name") {
             assertFailsWith(NameResolutionError::class, {
                 subject(listOf(
                     """
@@ -896,7 +896,7 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
             })
         }
 
-        xit("should not allow interface method arguments to have the same name") {
+        it("should not allow interface method arguments to have the same name") {
             assertFailsWith(NameResolutionError::class, {
                 subject(listOf(
                     """
@@ -908,7 +908,7 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
             })
         }
 
-        xit("should allow two distinct interface method arguments to have the same name") {
+        it("should allow two distinct interface method arguments to have the same name") {
             subject(listOf(
                 """
                     public interface A {
@@ -919,7 +919,7 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
             ))
         }
 
-        xit("should put constructor formals in the scope of the respective constructor") {
+        it("should put constructor formals in the scope of the respective constructor") {
             assertFailsWith(Environment.LookupFailed::class, {
                 subject(listOf(
                     """
@@ -935,7 +935,7 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
         }
     }
 
-    xit("should not allow any package prefix of a fully qualified TypeName usage to contain types") {
+    it("should not allow any package prefix of a fully qualified TypeName usage to contain types") {
         assertFailsWith(NameResolutionError::class, {
             subject(listOf(
                 """
@@ -963,7 +963,7 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
         })
     }
 
-    xit("should not allow a class to extend an interface") {
+    it("should not allow a class to extend an interface") {
         assertFailsWith(HierarchyCheckingError::class, {
             subject(listOf(
                 """
@@ -979,7 +979,7 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
         })
     }
 
-    xit("should not allow a class to implement another class") {
+    it("should not allow a class to implement another class") {
         assertFailsWith(HierarchyCheckingError::class, {
             subject(listOf(
                 """
@@ -996,7 +996,7 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
         })
     }
 
-    xit("should not permit interfaces to be repeated in an implements clause of a class declaration") {
+    it("should not permit interfaces to be repeated in an implements clause of a class declaration") {
         assertFailsWith(HierarchyCheckingError::class, {
             subject(listOf(
                 """
@@ -1069,7 +1069,7 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
         ))
     }
 
-    xit("should not permit interfaces to be repeated in the extends clause of an interface declaration") {
+    it("should not permit interfaces to be repeated in the extends clause of an interface declaration") {
         assertFailsWith(HierarchyCheckingError::class, {
             subject(listOf(
                 """
@@ -1090,7 +1090,7 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
         })
     }
 
-    xit("should no allow a class to extend a final class") {
+    it("should no allow a class to extend a final class") {
         assertFailsWith(HierarchyCheckingError::class, {
             subject(listOf(
                 """
@@ -1111,7 +1111,7 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
         })
     }
 
-    xit("should not allow an interface to extend a class") {
+    it("should not allow an interface to extend a class") {
         assertFailsWith(HierarchyCheckingError::class, {
             subject(listOf(
                 """
@@ -1127,7 +1127,7 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
         })
     }
 
-    xit("should not allow cycles in the interface hierarchy") {
+    it("should not allow cycles in the interface hierarchy") {
         assertFailsWith(HierarchyCheckingError::class, {
             subject(listOf(
                 """
@@ -1149,7 +1149,7 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
         })
     }
 
-    xit("should not allow an interface to extend itself") {
+    it("should not allow an interface to extend itself") {
         assertFailsWith(HierarchyCheckingError::class, {
             subject(listOf(
                 """
@@ -1161,7 +1161,7 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
         })
     }
 
-    xit("should not allow cycles in the class hierarchy") {
+    it("should not allow cycles in the class hierarchy") {
         assertFailsWith(HierarchyCheckingError::class, {
             subject(listOf(
                 """
@@ -1183,7 +1183,7 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
         })
     }
 
-    xit("should not allow a class to extend itself") {
+    it("should not allow a class to extend itself") {
         assertFailsWith(HierarchyCheckingError::class, {
             subject(listOf(
                 """
@@ -1195,7 +1195,7 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
         })
     }
 
-    xit("should not allow a class to declare two methods with the same signature") {
+    it("should not allow a class to declare two methods with the same signature") {
         assertFailsWith(NameResolutionError::class, {
             subject(listOf(
                 """
@@ -1215,7 +1215,7 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
         })
     }
 
-    xit("should not allow an interface to declare two methods with the same signature") {
+    it("should not allow an interface to declare two methods with the same signature") {
         assertFailsWith(NameResolutionError::class, {
             subject(listOf(
                 """
@@ -1233,7 +1233,7 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
         })
     }
 
-    xit("should not allow a class to declare two or more constructors with the same signatures") {
+    it("should not allow a class to declare two or more constructors with the same signatures") {
         assertFailsWith(HierarchyCheckingError::class, {
             subject(listOf(
                 """
@@ -1262,7 +1262,7 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
      * TODO: Are the following two tests sufficient to resolve this problem?
      */
 
-    xit("should not allow a class to override a method D with E if the return types of D and E are different") {
+    it("should not allow a class to override a method D with E if the return types of D and E are different") {
         assertFailsWith(HierarchyCheckingError::class, {
             subject(listOf(
                 """
@@ -1283,7 +1283,7 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
         })
     }
 
-    xit("should not allow an interface to override a method D with E if the return types of D and E are different") {
+    it("should not allow an interface to override a method D with E if the return types of D and E are different") {
         assertFailsWith(HierarchyCheckingError::class, {
             subject(listOf(
                 """
@@ -1300,7 +1300,7 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
         })
     }
 
-    xit("should require classes that inherit but don't implement abstract methods to be marked abstract") {
+    it("should require classes that inherit but don't implement abstract methods to be marked abstract") {
         assertFailsWith(HierarchyCheckingError::class, {
             subject(listOf(
                 """
@@ -1318,13 +1318,13 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
         })
     }
 
-    xit("should not allow a non-static method to replace a static method") {
+    it("should not allow a non-static method to replace a static method") {
         // TODO: Run test, print and inspect CST
 
         assert(false)
     }
 
-    xit("should allow an interface method to override a superinterface method if return types are same") {
+    it("should allow an interface method to override a superinterface method if return types are same") {
         subject(listOf(
             """
                 public interface A {
@@ -1340,7 +1340,7 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
     }
 
 
-    xit("should not allow a protected method to override a public method in classes") {
+    it("should not allow a protected method to override a public method in classes") {
         assertFailsWith(HierarchyCheckingError::class, {
             subject(listOf(
                 """
@@ -1359,7 +1359,7 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
         })
     }
 
-    xit("should not allow a class method to replace a final method") {
+    it("should not allow a class method to replace a final method") {
         assertFailsWith(HierarchyCheckingError::class, {
             subject(listOf(
                 """
@@ -1376,5 +1376,20 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
                 """.trimIndent()
             ))
         })
+    }
+
+    it("shouldn't require abstract classes to implement all interface methods") {
+        subject(listOf(
+            """
+                abstract public class A implements B {
+                    public A() {}
+                }
+            """.trimIndent(),
+            """
+                public interface B {
+                    public void foo();
+                }
+            """.trimIndent()
+        ))
     }
 })

@@ -80,6 +80,13 @@ fun areMethodSignaturesTheSame(methodDeclarator: CSTNode, otherMethodDeclarator:
         throw NameResolutionError("Tried to compare non-method declarators")
     }
 
+    val methodName = methodDeclarator.getChild("IDENTIFIER").lexeme
+    val otherMethodName = otherMethodDeclarator.getChild("IDENTIFIER").lexeme
+
+    if (methodName != otherMethodName) {
+        return false
+    }
+
     val formalParameters = methodDeclarator.getDescendants("FormalParameter")
     val otherFormalParameters = otherMethodDeclarator.getDescendants("FormalParameter")
 
@@ -387,10 +394,23 @@ class NameResolutionVisitor(
             modifiers.getDescendants("static").isNotEmpty()
         })
 
+        /**
+         * Resolve the method header and insert method into environment.
+         *
+         * A method body can use use methods from the entire class. Therefore, we need to have all method headers
+         * by the time we resolve our first method body.
+         *
+         * This is also useful because we need to compare signatures.
+         */
         val visitMethodHeaderAndInsertMethodDeclarationIntoEnvironment = { methodDeclaration: CSTNode ->
             val methodHeader = methodDeclaration.getChild("MethodHeader")
             if (isOwnMethodDeclaration(methodDeclaration)) {
+                /**
+                 * This will push the formals to the environment, so we have to pop them off.
+                 */
+                environment.pushScope()
                 this.visit(methodHeader)
+                environment.popScope()
             }
 
             val methodDeclarator = methodHeader.getChild("MethodDeclarator")
@@ -400,13 +420,14 @@ class NameResolutionVisitor(
         }
 
         /**
-         * Step 3: Add all static methods to the environment.
+         * Step 3: Add all static methods names to the environment.
          */
         staticMethodDeclarations.forEach(visitMethodHeaderAndInsertMethodDeclarationIntoEnvironment)
 
         /**
-         * Step 4: Do name resolution on static method bodies.
-         * This is done before we adding any non-static fields because static method bodies can't use instance fields.
+         * Resolve the method body. Since we need access to the method formals in the body, we need to push them to
+         * the environment before visiting the body, and thus we resolve the whole MethodDeclaration, instead of only
+         * the body.
          */
         val pushFormalParametersAndVisitMethodBody = fun (methodDeclaration: CSTNode) {
             if (!isOwnMethodDeclaration(methodDeclaration)) {
@@ -415,8 +436,6 @@ class NameResolutionVisitor(
 
             environment.pushScope()
             val methodDeclarator = methodDeclaration.getChild("MethodHeader").getChild("MethodDeclarator")
-            this.visit(methodDeclarator)
-
             val methodName = methodDeclarator.getChild("IDENTIFIER").lexeme
 
             val isMethodAlreadyDefined = fun (entry: Environment.Entry): Boolean {
@@ -428,16 +447,17 @@ class NameResolutionVisitor(
                 val otherMethodDeclarator = otherMethodDeclaration.getChild("MethodHeader").getChild("MethodDeclarator")
                 return areMethodSignaturesTheSame(methodDeclarator, otherMethodDeclarator)
             }
-
             if (environment.contains(isMethodAlreadyDefined)) {
                 throw NameResolutionError("Tried to define a method \"$methodName\" in a class with the same type signature as one already defined.")
             }
 
-            val methodBody = methodDeclaration.getChild("MethodBody")
-            this.visit(methodBody)
+            this.visit(methodDeclaration)
             environment.popScope()
         }
 
+        /**
+         * Step 4: Resolve static the method body.
+         */
         staticMethodDeclarations.forEach(pushFormalParametersAndVisitMethodBody)
 
         /**
@@ -466,6 +486,8 @@ class NameResolutionVisitor(
         })
 
         val ownInstanceMethodDeclarations = instanceMethodDeclarations.filter({ isOwnMethodDeclaration(it) })
+        val classModifiers = node.getChild("Modifiers").getDescendants("Modifier").map({ it.children[0].name }).toSet()
+        val isClassAbstract = "abstract" in classModifiers
 
         allInterfaceMethods.forEach({ (interfaceName, abstractMethodDeclarations) ->
             abstractMethodDeclarations.forEach({abstractMethodDeclaration ->
@@ -493,7 +515,9 @@ class NameResolutionVisitor(
                         return false
                     })
 
-                if (instanceMethodsThatImplementInterfaceMethod.isEmpty()) {
+
+
+                if (!isClassAbstract && instanceMethodsThatImplementInterfaceMethod.isEmpty()) {
                     throw UnimplementedInterfaceException(interfaceName, interfaceMethodName, className)
                 }
             })
@@ -522,13 +546,11 @@ class NameResolutionVisitor(
 
         abstractMethodDeclarations.forEach({ abstractMethodDeclaration ->
             val methodHeader = abstractMethodDeclaration.getChild("MethodHeader")
-            this.visit(methodHeader)
-
-            val methodDeclarator = methodHeader.getChild("MethodDeclarator")
             environment.pushScope()
-            this.visit(methodDeclarator)
+            this.visit(methodHeader)
             environment.popScope()
 
+            val methodDeclarator = methodHeader.getChild("MethodDeclarator")
             val methodName = methodDeclarator.getChild("IDENTIFIER").lexeme
 
             val isAbstractMethodAlreadyDefined = fun (entry: Environment.Entry) : Boolean {
@@ -629,13 +651,7 @@ class NameResolutionVisitor(
             // Do nothing
         }
 
-        for (child in node.children) {
-            if (child.name == "MethodDeclarator") {
-                continue
-            }
-
-            this.visit(child)
-        }
+        super.visitMethodHeader(node)
     }
 
     /**
