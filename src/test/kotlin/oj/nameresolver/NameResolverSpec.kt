@@ -411,23 +411,21 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
             })
         }
 
-        it("should not allow a class in the default package to have the same name as a package") {
-            assertFailsWith(EitherPackageNameOrQualifiedType::class, {
-                subject(listOf(
-                    """
+        it("should allow a class in the default package to have the same name as a package") {
+            subject(listOf(
+                """
                     package B;
 
                     public class A {
                         public A() {}
                     }
                     """.trimIndent(),
-                    """
+                """
                     public class B {
                         public B() {}
                     }
                     """.trimIndent()
-                ))
-            })
+            ))
         }
 
         it("should not allow import on demand declarations for a package that doesn't exist even if its a string prefix of some package that does exist") {
@@ -1480,7 +1478,7 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
         assertFailsWith(NameResolutionError::class, {
             subject(listOf(
                 """
-                    package A;
+                package A;
 
                 public class A {
                     public A() {}
@@ -1490,6 +1488,34 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
                     }
                 }
             """.trimIndent()
+            ))
+        })
+    }
+
+    it("should require interfaces without super-interface to incorrectly override Object methods") {
+        assertFailsWith(TwoMethodsInInterfaceHierarchyWithSameSignatureButDifferentReturnTypes::class, {
+            subject(listOf(
+                """
+                    public interface A {
+                        public void toString();
+                    }
+                """.trimIndent(),
+                """
+                    package java.lang;
+
+                    public class Object {
+                        public Object() {}
+
+                        public String toString() {}
+                    }
+                """.trimIndent(),
+                """
+                    package java.lang;
+
+                    public class String {
+                        public String() {}
+                    }
+                """.trimIndent()
             ))
         })
     }

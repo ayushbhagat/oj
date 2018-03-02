@@ -171,32 +171,6 @@ fun canMethodHeadersReplaceOneAnother(methodHeader1: CSTNode, methodHeader2: CST
     return false
 }
 
-fun getInterfaceInheritedMethods(interfaceDeclaration: CSTNode, typeName: String, visited: MutableSet<CSTNode>): List<CSTNode> {
-    if (interfaceDeclaration.name != "InterfaceDeclaration") {
-        throw HierarchyCheckingError("Expected an interface declaration but found ${interfaceDeclaration.name} instead.")
-    }
-
-    if (visited.filter({ it === interfaceDeclaration }).isNotEmpty()) {
-        val interfaceName = interfaceDeclaration.getChild("IDENTIFIER").lexeme
-        throw InterfaceHierarchyIsCyclic(typeName, interfaceName)
-    }
-
-    val interfaceBody = interfaceDeclaration.getChild("InterfaceBody")
-    val abstractMethodDeclarations = interfaceBody.getDescendants("AbstractMethodDeclaration")
-
-    val extendedInterfaceNames = interfaceDeclaration.getChild("ExtendsInterfacesOpt").getDescendants("Name")
-    val extendedInterfaceDeclarations = extendedInterfaceNames.map({ it.getDeclaration() })
-
-    visited.add(interfaceDeclaration)
-    val extendedAbstractMethods = extendedInterfaceDeclarations.flatMap({
-        getInterfaceInheritedMethods(it, typeName, visited)
-    })
-
-    visited.remove(interfaceDeclaration)
-
-    return extendedAbstractMethods + abstractMethodDeclarations
-}
-
 val nodesThatCanHaveModifiers = setOf("Modifiers", "ClassDeclaration", "FieldDeclaration", "MethodHeader", "MethodDeclaration", "AbstractMethodDeclaration", "ConstructorDeclaration", "InterfaceDeclaration")
 
 class TriedToAccessModifiersOfAUnupportedCSTNode(nodeName: String): Exception("Tried to access modifiers in a non-supported CSTNode: $nodeName")
@@ -306,6 +280,49 @@ class NameResolutionVisitor(
 
         nameNode.setDeclaration(declaration)
     }
+
+    private fun getInterfaceInheritedMethods(interfaceDeclaration: CSTNode, typeName: String, visited: MutableSet<CSTNode>): List<CSTNode> {
+        if (interfaceDeclaration.name != "InterfaceDeclaration") {
+            throw HierarchyCheckingError("Expected an interface declaration but found ${interfaceDeclaration.name} instead.")
+        }
+
+        if (visited.filter({ it === interfaceDeclaration }).isNotEmpty()) {
+            val interfaceName = interfaceDeclaration.getChild("IDENTIFIER").lexeme
+            throw InterfaceHierarchyIsCyclic(typeName, interfaceName)
+        }
+
+        val interfaceBody = interfaceDeclaration.getChild("InterfaceBody")
+        val abstractMethodDeclarations = interfaceBody.getDescendants("AbstractMethodDeclaration")
+
+        val extendedInterfaceNames = interfaceDeclaration.getChild("ExtendsInterfacesOpt").getDescendants("Name")
+        val extendedInterfaceDeclarations = extendedInterfaceNames.map({ it.getDeclaration() })
+
+        visited.add(interfaceDeclaration)
+        var extendedAbstractMethods = extendedInterfaceDeclarations.flatMap({
+            getInterfaceInheritedMethods(it, typeName, visited)
+        })
+
+        visited.remove(interfaceDeclaration)
+
+        if (extendedInterfaceNames.isEmpty()) {
+            if (importOnDemandDeclarationEnvironment.contains("Object")) {
+                val baseSuperClass = importOnDemandDeclarationEnvironment.find("Object")
+                val baseSuperClassClassBody = baseSuperClass.getChild("ClassBody")
+                val baseSuperClassMethodDeclarations = baseSuperClassClassBody.getDescendants("MethodDeclaration")
+                val baseSuperInterfaceAbstractMethodDeclarations = baseSuperClassMethodDeclarations.map({ methodDeclaration ->
+                    val methodHeader = methodDeclaration.getChild("MethodHeader")
+                    val semicolon = CSTNode(";", "", mutableListOf())
+                    val abstractMethodDeclaration = CSTNode("AbstractMethodDeclaration", "", mutableListOf(methodHeader, semicolon))
+                     abstractMethodDeclaration
+                })
+
+                extendedAbstractMethods += baseSuperInterfaceAbstractMethodDeclarations
+            }
+        }
+
+        return extendedAbstractMethods + abstractMethodDeclarations
+    }
+
 
     private fun getClassInheritedDescendants(classDeclaration: CSTNode, predicate: (CSTNode) -> Boolean) : List<CSTNode> {
         if (classDeclaration.name != "ClassDeclaration") {

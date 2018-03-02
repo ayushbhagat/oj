@@ -19,6 +19,7 @@ data class CSTNode(
         val declarations: MutableMap<CSTNode, CSTNode> = mutableMapOf()
     }
 
+    // TODO: Two names that are value equal will resolve to the same declaration. This is incorrect. Fix.
     fun setDeclaration(node: CSTNode) {
         if (name != "Name") {
             throw CSTNodeError("Tried to assign a declaration to a \"$name\" != \"Name\" node.")
