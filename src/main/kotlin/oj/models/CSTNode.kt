@@ -2,18 +2,43 @@ package oj.models
 
 import java.util.*
 
-class FoundNoChild: Exception("Found no descendants, expected 1.")
-class FoundManyChildren: Exception("Found many descendants, expected 1.")
+open class CSTNodeError(reason: String): Exception(reason)
 
-class FoundNoDescendant : Exception("Found no descendants, expected 1.")
-class FoundManyDescendants: Exception("Found many descendants, expected 1.")
+class FoundNoChild: CSTNodeError("Found no descendants, expected 1.")
+class FoundManyChildren: CSTNodeError("Found many descendants, expected 1.")
+
+class FoundNoDescendant : CSTNodeError("Found no descendants, expected 1.")
+class FoundManyDescendants: CSTNodeError("Found many descendants, expected 1.")
 
 data class CSTNode(
     val name: String,
     val lexeme: String,
-    val children: MutableList<CSTNode> = mutableListOf(),
-    var declaration: CSTNode? = null
+    val children: MutableList<CSTNode> = mutableListOf()
 ) {
+    companion object {
+        val declarations: MutableMap<CSTNode, CSTNode> = mutableMapOf()
+    }
+
+    fun setDeclaration(node: CSTNode) {
+        if (name != "Name") {
+            throw CSTNodeError("Tried to assign a declaration to a \"$name\" != \"Name\" node.")
+        }
+
+        CSTNode.declarations[this] = node
+    }
+
+    fun getDeclaration(): CSTNode {
+        if (name != "Name") {
+            throw CSTNodeError("Tried to retrieve a declaration for a \"$name\" != \"Name\" node.")
+        }
+
+        val declaration = CSTNode.declarations[this]
+        if (declaration == null) {
+            throw CSTNodeError("\"Name\" node doesn't have a declaration assigned to it.")
+        }
+
+        return declaration
+    }
 
     fun getDescendant(name: String): CSTNode {
         return getDescendant({ it.name == name })

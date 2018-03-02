@@ -996,7 +996,7 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
         })
     }
 
-    it("should not permit interfaces to be repeated in an implements clause of a class declaration") {
+    xit("should not permit interfaces to be repeated in an implements clause of a class declaration") {
         assertFailsWith(HierarchyCheckingError::class, {
             subject(listOf(
                 """
@@ -1019,6 +1019,54 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
                 """.trimIndent()
             ))
         })
+    }
+
+    it("should ensure that classes implement all methods of their interfaces") {
+        assertFailsWith(UnimplementedInterfaceException::class, {
+            subject(listOf(
+                """
+                    public class A implements B {
+                        public A() {}
+                        public int toInt() {
+                            return 1;
+                        }
+                    }
+                """.trimIndent(),
+                """
+                    public interface B extends C {
+                        public void foo(A a, B[] b);
+                        public int toInt();
+                    }
+                """.trimIndent(),
+                """
+                    public interface C {
+                        public void sayHiC(B b);
+                    }
+                """.trimIndent()
+            ))
+        })
+    }
+
+    it("should allow undirected cycles in the interface hierarchies that aren't directed cycles") {
+        subject(listOf(
+            """
+                public class D implements A {
+                    public D() {}
+                    public void foo() {}
+                }
+            """.trimIndent(),
+            """
+                public interface A extends B, C{}
+            """.trimIndent(),
+            """
+                public interface B extends C {}
+            """.trimIndent(),
+            """
+                public interface C {
+                    public void foo();
+                }
+            """.trimIndent()
+        ))
     }
 
     xit("should not permit interfaces to be repeated in the extends clause of an interface declaration") {
@@ -1324,32 +1372,6 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
                     public class B extends A {
                         public B() {}
                         public void foo() {}
-                    }
-                """.trimIndent()
-            ))
-        })
-    }
-
-    xit("should ensure that classes implement all methods of their interfaces") {
-        assertFailsWith(HierarchyCheckingError::class, {
-            subject(listOf(
-                """
-                    public class A implements B {
-                        public A() {}
-                        public int toInt() {
-                            return 1;
-                        }
-                    }
-                """.trimIndent(),
-                """
-                    public interface B extends C {
-                        public void foo(A a, B[] b);
-                        public int toInt();
-                    }
-                """.trimIndent(),
-                """
-                    public interface C extends C {
-                        public void sayHiC(B b);
                     }
                 """.trimIndent()
             ))

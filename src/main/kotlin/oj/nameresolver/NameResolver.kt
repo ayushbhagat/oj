@@ -7,6 +7,7 @@ import oj.models.FoundNoDescendant
 
 open class NameResolutionError(reason: String) : Exception(reason)
 open class HierarchyCheckingError(reason: String) : NameResolutionError(reason)
+open class UnimplementedInterfaceException(interfaceName: String, interfaceMethodName: String, className: String) : HierarchyCheckingError("Interface method \"$interfaceName.$interfaceMethodName\" not implemented in \"$className\"")
 
 class InvalidNameResolutionInsertion(reason: String): NameResolutionError(reason)
 class TypeImportedFromTwoImportOnDemandDeclarations(typeName: String)
@@ -14,6 +15,64 @@ class TypeImportedFromTwoImportOnDemandDeclarations(typeName: String)
 
 val isClassOrInterfaceDeclaration = { node: CSTNode ->
     node.name == "ClassDeclaration" || node.name == "InterfaceDeclaration"
+}
+
+
+fun areTypesTheSame(type: CSTNode, otherType: CSTNode) : Boolean {
+    if (type.name != "Type" || otherType.name != "Type") {
+        throw NameResolutionError("Tried to compare non-types")
+    }
+
+    if (type.children[0].name != otherType.children[0].name) {
+        return false
+    }
+
+    if (type.children[0].name == "PrimitiveType") {
+        val primitiveType = type.children[0]
+        val otherPrimitiveType = otherType.children[0]
+
+        if (primitiveType.children[0].name != otherPrimitiveType.children[0].name) {
+            return false
+        }
+    } else {
+        val referenceType = type.children[0]
+        val otherReferenceType = otherType.children[0]
+
+        if (referenceType.children[0].name != otherReferenceType.children[0].name) {
+            return false
+        }
+
+        if (referenceType.children[0].name == "ClassOrInterfaceType") {
+            val typeName = referenceType.children[0].getChild("Name")
+            val otherTypeName = otherReferenceType.children[0].getChild("Name")
+
+            if (typeName.getDeclaration() != otherTypeName.getDeclaration()) {
+                return false
+            }
+        } else {
+            val arrayType = referenceType.children[0]
+            val otherArrayType = otherReferenceType.children[0]
+
+            if (arrayType.children[0].name != otherArrayType.children[0].name) {
+                return false
+            }
+
+            if (arrayType.children[0].name == "PrimitiveType") {
+                if (arrayType.children[0] != otherArrayType.children[0]) {
+                    return false
+                }
+            } else {
+                val typeName = arrayType.children[0]
+                val otherTypeName = otherArrayType.children[0]
+
+                if (typeName.getDeclaration() != otherTypeName.getDeclaration()) {
+                    return false
+                }
+            }
+        }
+    }
+
+    return true
 }
 
 fun areMethodSignaturesTheSame(methodDeclarator: CSTNode, otherMethodDeclarator: CSTNode): Boolean {
@@ -35,53 +94,29 @@ fun areMethodSignaturesTheSame(methodDeclarator: CSTNode, otherMethodDeclarator:
         val formalParameterType = formalParameter.getChild("Type")
         val otherFormalParameterType = otherFormalParameter.getChild("Type")
 
-        if (formalParameterType.children[0].name != otherFormalParameterType.children[0].name) {
+        if (!areTypesTheSame(formalParameterType, otherFormalParameterType)) {
             return false
         }
+    }
 
-        if (formalParameterType.children[0].name == "PrimitiveType") {
-            val formalParameterPrimitiveType = formalParameterType.children[0]
-            val otherFormalParameterPrimitiveType = otherFormalParameterType.children[0]
+    return true
+}
 
-            if (formalParameterPrimitiveType.children[0].name != otherFormalParameterPrimitiveType.children[0].name) {
-                return false
-            }
-        } else {
-            val formalParameterReferenceType = formalParameterType.children[0]
-            val otherFormalParameterReferenceType = otherFormalParameterType.children[0]
+fun areMethodReturnTypesTheSame(methodHeader: CSTNode, otherMethodHeader: CSTNode): Boolean {
+    if (methodHeader.name != "MethodHeader" || otherMethodHeader.name != "MethodHeader") {
+        throw NameResolutionError("Tried to compare non-method headers")
+    }
 
-            if (formalParameterReferenceType.children[0].name != otherFormalParameterReferenceType.children[0].name) {
-                return false
-            }
+    val methodReturnType = methodHeader.children[1]
+    val otherMethodReturnType = otherMethodHeader.children[1]
 
-            if (formalParameterReferenceType.children[0].name == "ClassOrInterfaceType") {
-                val formalParameterTypeName = formalParameterReferenceType.children[0].getChild("Name")
-                val otherFormalParameterTypeName = otherFormalParameterReferenceType.children[0].getChild("Name")
+    if (methodReturnType.name != otherMethodReturnType.name) {
+        return false
+    }
 
-                if (formalParameterTypeName.declaration != otherFormalParameterTypeName.declaration) {
-                    return false
-                }
-            } else {
-                val formalParameterArrayType = formalParameterReferenceType.children[0]
-                val otherFormalParameterArrayType = otherFormalParameterReferenceType.children[0]
-
-                if (formalParameterArrayType.children[0].name != otherFormalParameterArrayType.children[0].name) {
-                    return false
-                }
-
-                if (formalParameterArrayType.children[0].name == "PrimitiveType") {
-                    if (formalParameterArrayType.children[0] != otherFormalParameterArrayType.children[0]) {
-                        return false
-                    }
-                } else {
-                    val formalParameterTypeName = formalParameterArrayType.children[0]
-                    val otherFormalParameterTypeName = otherFormalParameterArrayType.children[0]
-
-                    if (formalParameterTypeName.declaration != otherFormalParameterTypeName.declaration) {
-                        return false
-                    }
-                }
-            }
+    if (methodReturnType.name == "Type") {
+        if (!areTypesTheSame(methodReturnType, otherMethodReturnType)) {
+            return false
         }
     }
 
@@ -119,7 +154,7 @@ class NameResolutionVisitor(
          * This won't work when our program has two Name nodes that are value equal to each other.
          */
 
-        nameNode.declaration = declaration
+        nameNode.setDeclaration(declaration)
     }
 
     fun resolveTypeName(nameNode: CSTNode) {
@@ -210,39 +245,65 @@ class NameResolutionVisitor(
             return
         }
 
-        try {
-            val interfaces = node.getChild("InterfacesOpt").getDescendant("Interfaces")
-            val interfaceTypes = interfaces.getDescendants("InterfaceType")
-            val interfaceNames = interfaceTypes.map({ it.getDescendant("Name") })
-            val isNameAnInterfaceDeclaration = { interfaceName: CSTNode ->
-                interfaceName.declaration!!.name == "InterfaceDeclaration"
-            }
+        val interfaceTypes = node.getChild("InterfacesOpt").getDescendants("InterfaceType")
+        val interfaceNames = interfaceTypes.map({ it.getDescendant("Name") })
+        val isNameAnInterfaceDeclaration = { interfaceName: CSTNode ->
+            interfaceName.getDeclaration().name == "InterfaceDeclaration"
+        }
 
-            val className = node.getChild("IDENTIFIER").lexeme
+        val className = node.getChild("IDENTIFIER").lexeme
 
-            if (!interfaceNames.all(isNameAnInterfaceDeclaration)) {
-                throw HierarchyCheckingError("Class \"$className\" tried to implement a class.")
-            }
+        if (interfaceNames.isNotEmpty() && !interfaceNames.all(isNameAnInterfaceDeclaration)) {
+            throw HierarchyCheckingError("Class \"$className\" tried to implement a class.")
+        }
 
-            val interfaceDeclarations = interfaceNames.map({ it.declaration!! })
+        val interfaceDeclarations = interfaceNames.map({ it.getDeclaration() })
 
-            for (i in IntRange(0, interfaceDeclarations.size - 1)) {
-                for (j in IntRange(0, interfaceDeclarations.size - 1)) {
-                    if (i == j) {
-                        continue
-                    }
+        for (i in IntRange(0, interfaceDeclarations.size - 1)) {
+            for (j in IntRange(0, interfaceDeclarations.size - 1)) {
+                if (i == j) {
+                    continue
+                }
 
-                    if (interfaceDeclarations[i] === interfaceDeclarations[j]) {
-                        val interfaceDeclaration = interfaceDeclarations[i]
-                        val interfaceName = interfaceDeclaration.getChild("IDENTIFIER").lexeme
-                        throw HierarchyCheckingError("Class $className implements interface $interfaceName more than once")
-                    }
+                if (interfaceDeclarations[i] === interfaceDeclarations[j]) {
+                    val interfaceDeclaration = interfaceDeclarations[i]
+                    val interfaceName = interfaceDeclaration.getChild("IDENTIFIER").lexeme
+                    throw HierarchyCheckingError("Class $className implements interface $interfaceName more than once")
                 }
             }
-
-        } catch (ex: FoundNoDescendant) {
-
         }
+
+        fun getInterfaceInheritedMethods(interfaceDeclaration: CSTNode, visited: MutableSet<CSTNode>): List<CSTNode> {
+            if (interfaceDeclaration.name != "InterfaceDeclaration") {
+                throw HierarchyCheckingError("Expected an interface declaration but found ${interfaceDeclaration.name} instead.")
+            }
+
+            if (visited.filter({ it === interfaceDeclaration }).isNotEmpty()) {
+                val interfaceName = interfaceDeclaration.getChild("IDENTIFIER").lexeme
+                throw HierarchyCheckingError("Encountered a cycle in the interface hierarchy. Saw interface \"$interfaceName\" twice when analyzing the interfaces that class \"$className\" implements.")
+            }
+
+            val interfaceBody = interfaceDeclaration.getChild("InterfaceBody")
+            val abstractMethodDeclarations = interfaceBody.getDescendants("AbstractMethodDeclaration")
+
+            val extendedInterfaceNames = interfaceDeclaration.getChild("ExtendsInterfacesOpt").getDescendants("Name")
+            val extendedInterfaceDeclarations = extendedInterfaceNames.map({ it.getDeclaration() })
+
+            visited.add(interfaceDeclaration)
+            val extendedAbstractMethods = extendedInterfaceDeclarations.flatMap({
+                val temp = getInterfaceInheritedMethods(it, visited)
+                temp
+            })
+
+            visited.remove(interfaceDeclaration)
+
+            return extendedAbstractMethods + abstractMethodDeclarations
+        }
+
+        val allInterfaceMethods = interfaceDeclarations.map({interfaceDeclaration ->
+            val interfaceName = interfaceDeclaration.getChild("IDENTIFIER").lexeme
+            Pair(interfaceName, getInterfaceInheritedMethods(interfaceDeclaration, mutableSetOf()))
+        })
 
         fun getInheritedDescendants(classDeclaration: CSTNode, descendantName: String) : List<CSTNode> {
             if (classDeclaration.name != "ClassDeclaration") {
@@ -257,7 +318,7 @@ class NameResolutionVisitor(
 
             return (
                 if (superNode != null) {
-                    getInheritedDescendants(superNode.getDescendant("Name").declaration!!, descendantName)
+                    getInheritedDescendants(superNode.getDescendant("Name").getDeclaration(), descendantName)
                 } else {
                     if (importOnDemandDeclarationEnvironment.contains("Object")) {
                         val baseSuperClass = importOnDemandDeclarationEnvironment.find("Object")
@@ -277,7 +338,6 @@ class NameResolutionVisitor(
         fun isOwnFieldDeclaration(otherFieldDeclaration: CSTNode) : Boolean {
             return ownFieldDeclarations.filter({ it === otherFieldDeclaration }).isNotEmpty()
         }
-
 
         val visitAndInsertFieldDeclarationIntoEnvironment = { fieldDeclaration: CSTNode ->
             if (isOwnFieldDeclaration(fieldDeclaration)) {
@@ -392,6 +452,7 @@ class NameResolutionVisitor(
         val instanceMethodDeclarations = methodDeclarations.filter({ it !in staticMethodDeclarations })
         instanceMethodDeclarations.forEach(visitMethodHeaderAndInsertMethodDeclarationIntoEnvironment)
 
+
         /**
          * Step 7: Do name resolution on constructors and instance methods.
          */
@@ -404,6 +465,39 @@ class NameResolutionVisitor(
             environment.popScope()
         })
 
+        val ownInstanceMethodDeclarations = instanceMethodDeclarations.filter({ isOwnMethodDeclaration(it) })
+
+        allInterfaceMethods.forEach({ (interfaceName, abstractMethodDeclarations) ->
+            abstractMethodDeclarations.forEach({abstractMethodDeclaration ->
+                val interfaceMethodHeader = abstractMethodDeclaration.getChild("MethodHeader")
+                val interfaceMethodDeclarator = interfaceMethodHeader.getChild("MethodDeclarator")
+                val interfaceMethodName = interfaceMethodDeclarator.getChild("IDENTIFIER").lexeme
+
+                val instanceMethodsThatImplementInterfaceMethod = ownInstanceMethodDeclarations
+                    .filter(fun(instanceMethodDeclaration: CSTNode): Boolean {
+                        val instanceMethodHeader = instanceMethodDeclaration.getChild("MethodHeader")
+                        val instanceMethodDeclarator = instanceMethodHeader.getChild("MethodDeclarator")
+
+                        val instanceMethodName = instanceMethodDeclarator.getChild("IDENTIFIER").lexeme
+
+                        if (areMethodSignaturesTheSame(interfaceMethodDeclarator, instanceMethodDeclarator)) {
+                            if (!areMethodReturnTypesTheSame(interfaceMethodHeader, instanceMethodHeader)) {
+                                throw HierarchyCheckingError(
+                                    "Instance method \"$instanceMethodName\" in class \"$className\" tried to implement a method in interface \"$interfaceName\" with the same signature, but a different return type"
+                                )
+                            }
+
+                            return true
+                        }
+
+                        return false
+                    })
+
+                if (instanceMethodsThatImplementInterfaceMethod.isEmpty()) {
+                    throw UnimplementedInterfaceException(interfaceName, interfaceMethodName, className)
+                }
+            })
+        })
 
     }
 
