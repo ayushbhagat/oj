@@ -14,12 +14,13 @@ class RanOutOfIds: CSTNodeError("Tried to assign unique id to CSTNode, but ran o
 
 data class CSTNode(
     val name: String,
-    val lexeme: String,
+    val lexeme: String = "",
     val children: MutableList<CSTNode> = mutableListOf()
 ) {
     private var id = CSTNode.nextId()
     companion object {
         val declarations: MutableMap<CSTNode, CSTNode> = mutableMapOf()
+        val types: MutableMap<CSTNode, Type> = mutableMapOf()
         var id: Int = 0
 
         fun nextId(): Int {
@@ -51,10 +52,31 @@ data class CSTNode(
 
         val declaration = CSTNode.declarations[this]
         if (declaration == null) {
-            throw CSTNodeError("\"Name\" node doesn't have a declaration assigned to it.")
+            throw CSTNodeError("\"$name\" node doesn't have a declaration assigned to it.")
         }
 
         return declaration
+    }
+
+    fun setType(type: Type) {
+        if (name != "Name") {
+            throw CSTNodeError("Tried to assign a type to a \"$name\" != \"Name\" node.")
+        }
+
+        CSTNode.types[this] = type
+    }
+
+    fun getType(): Type {
+        if (name != "Name") {
+            throw CSTNodeError("Tried to retrieve a type for a \"$name\" != \"Name\" node.")
+        }
+
+        val type = CSTNode.types[this]
+        if (type == null) {
+            throw CSTNodeError("\"$name\" node doesn't have a type assigned to it.")
+        }
+
+        return type
     }
 
     fun getDescendant(name: String): CSTNode {

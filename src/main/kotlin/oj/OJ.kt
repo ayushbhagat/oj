@@ -13,28 +13,29 @@ class InvalidClassOrInterfaceNameError(message: String) : Exception(message)
 class InvalidFileNameError(message: String) : Exception(message)
 
 fun main(args: Array<String>) {
-    if (args.isEmpty()) {
-        System.exit(42)
-    }
-
-    val filenames = args.toList()
-//    val filenames = listOf(
-//        "./stdlib/java/io/OutputStream.java",
-//        "./stdlib/java/io/PrintStream.java",
-//        "./stdlib/java/io/Serializable.java",
-//        "./stdlib/java/lang/Boolean.java",
-//        "./stdlib/java/lang/Byte.java",
-//        "./stdlib/java/lang/Character.java",
-//        "./stdlib/java/lang/Class.java",
-//        "./stdlib/java/lang/Cloneable.java",
-//        "./stdlib/java/lang/Integer.java",
-//        "./stdlib/java/lang/Number.java",
-//        "./stdlib/java/lang/Object.java",
-//        "./stdlib/java/lang/Short.java",
-//        "./stdlib/java/lang/String.java",
-//        "./stdlib/java/lang/System.java",
-//        "./stdlib/java/util/Arrays.java"
-//    )
+//    if (args.isEmpty()) {
+//        System.exit(42)
+//    }
+//
+//    val filenames = args.toList()
+    val filenames = listOf(
+        "./test/marmoset/stdlib/3.0/java/io/OutputStream.java",
+        "./test/marmoset/stdlib/3.0/java/io/PrintStream.java",
+        "./test/marmoset/stdlib/3.0/java/io/Serializable.java",
+        "./test/marmoset/stdlib/3.0/java/lang/Boolean.java",
+        "./test/marmoset/stdlib/3.0/java/lang/Byte.java",
+        "./test/marmoset/stdlib/3.0/java/lang/Character.java",
+        "./test/marmoset/stdlib/3.0/java/lang/Class.java",
+        "./test/marmoset/stdlib/3.0/java/lang/Cloneable.java",
+        "./test/marmoset/stdlib/3.0/java/lang/Integer.java",
+        "./test/marmoset/stdlib/3.0/java/lang/Number.java",
+        "./test/marmoset/stdlib/3.0/java/lang/Object.java",
+        "./test/marmoset/stdlib/3.0/java/lang/Short.java",
+        "./test/marmoset/stdlib/3.0/java/lang/String.java",
+        "./test/marmoset/stdlib/3.0/java/lang/System.java",
+        "./test/marmoset/stdlib/3.0/java/util/Arrays.java",
+        "./test/marmoset/a3/J1_5_ForwardReference_ExplicitThis_InAssignment.java"
+    )
 
     try {
         val baseDfas = BASE_DFA_NAMES
