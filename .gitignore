@@ -39,3 +39,4 @@ build/
 *.swp
 gen
 Archive.zip
+.idea/ClojureProjectResolveSettings.xml

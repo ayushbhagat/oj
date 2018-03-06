@@ -1,6 +1,8 @@
+import oj.models.CSTNode
 import oj.parser.CFGStateDataHelper
 import oj.parser.Parser
 import oj.models.NFA
+import oj.nameresolver.NameResolver
 import oj.scanner.BASE_DFA_NAMES
 import oj.scanner.SCANNER_DFA
 import oj.scanner.Scanner
@@ -14,10 +16,28 @@ fun main(args: Array<String>) {
     if (args.isEmpty()) {
         System.exit(42)
     }
-    val filename = args[0]
+
+    val filenames = args.toList()
+//    val filenames = listOf(
+//        "./stdlib/java/io/OutputStream.java",
+//        "./stdlib/java/io/PrintStream.java",
+//        "./stdlib/java/io/Serializable.java",
+//        "./stdlib/java/lang/Boolean.java",
+//        "./stdlib/java/lang/Byte.java",
+//        "./stdlib/java/lang/Character.java",
+//        "./stdlib/java/lang/Class.java",
+//        "./stdlib/java/lang/Cloneable.java",
+//        "./stdlib/java/lang/Integer.java",
+//        "./stdlib/java/lang/Number.java",
+//        "./stdlib/java/lang/Object.java",
+//        "./stdlib/java/lang/Short.java",
+//        "./stdlib/java/lang/String.java",
+//        "./stdlib/java/lang/System.java",
+//        "./stdlib/java/util/Arrays.java"
+//    )
+
     try {
-        var inputFileString = File(filename).inputStream().bufferedReader().use { it.readText() }
-        var baseDfas = BASE_DFA_NAMES
+        val baseDfas = BASE_DFA_NAMES
                 .keys
                 .map {
                     NFA.deserialize(
@@ -33,7 +53,6 @@ fun main(args: Array<String>) {
                 oj.scanner.ALPHABET,
                 "")
         val scanner = Scanner(scannerDfa, baseDfas)
-        val tokens = scanner.tokenize(inputFileString)
 
         val lr1DFAFilelocation = "gen/joos-lr1.dfa"
         val lr1DFA = NFA.deserialize(
@@ -44,28 +63,50 @@ fun main(args: Array<String>) {
         )
 
         val parser = Parser(lr1DFA)
-        val cst = parser.parse(tokens)
-        Weeder.weed(cst)
+        val packages = mutableMapOf<String, MutableList<CSTNode>>()
 
-        cst
-            .getDescendants({ it.name == "ClassDeclaration" || it.name == "InterfaceDeclaration" })
-            .forEach({ node ->
-                val classOrInterfaceName = node.children[2].lexeme
-                val basename = filename.split("/").last()
-                val expectedExtension = ".java"
+        filenames.forEach({ filename ->
+            val inputFileString = File(filename).inputStream().bufferedReader().use { it.readText() }
+            val tokens = scanner.tokenize(inputFileString)
+            val cst = parser.parse(tokens)
+            Weeder.weed(cst)
 
-                if (!basename.endsWith(expectedExtension)) {
-                    throw InvalidFileNameError("File extension is invalid: \"$expectedExtension\"")
-                }
+            // Ensure type within this file has the same name as the basename of this file
+            cst
+                .getDescendants({ it.name == "ClassDeclaration" || it.name == "InterfaceDeclaration" })
+                .forEach({ node ->
+                    val classOrInterfaceName = node.children[2].lexeme
+                    val basename = filename.split("/").last()
+                    val expectedExtension = ".java"
 
-                val expectedClassName = basename.substring(0, basename.length - expectedExtension.length)
+                    if (!basename.endsWith(expectedExtension)) {
+                        throw InvalidFileNameError("File extension is invalid: \"$expectedExtension\"")
+                    }
 
-                if (classOrInterfaceName != expectedClassName) {
-                    throw InvalidClassOrInterfaceNameError(
-                        "Expected ${node.name} \"$classOrInterfaceName\" to be named \"$expectedClassName\"."
-                    )
-                }
-            })
+                    val expectedClassName = basename.substring(0, basename.length - expectedExtension.length)
+
+                    if (classOrInterfaceName != expectedClassName) {
+                        throw InvalidClassOrInterfaceNameError(
+                            "Expected ${node.name} \"$classOrInterfaceName\" to be named \"$expectedClassName\"."
+                        )
+                    }
+                })
+
+            val packageDeclarationNodes = cst.getDescendants("PackageDeclaration")
+
+            val packageName = if (packageDeclarationNodes.isEmpty()) "" else {
+                val nameNode = packageDeclarationNodes[0].children[1]
+                nameNode.getDescendants("IDENTIFIER").map({ it.lexeme }).joinToString(".")
+            }
+
+            val pkg = packages.getOrDefault(packageName, mutableListOf())
+            pkg.add(cst)
+
+            packages[packageName] = pkg
+        })
+
+        NameResolver.resolveNames(packages)
+
 
     } catch (e: Exception) {
         e.printStackTrace()

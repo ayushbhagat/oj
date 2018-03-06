@@ -654,4 +654,66 @@ object WeederSpec : SubjectSpek<(String) -> CSTNode>({
         }
     }
 
+    it("should not allow interface methods to be protected") {
+        val program = """
+            |public interface HelloWorld {
+            |   protected void foo();
+            |}
+        """.trimMargin()
+
+        assertFailsWith(InterfaceWeeder.InterfaceMethodIsProtectedError::class) {
+            subject(program)
+        }
+    }
+
+    it("should not allow single name import to conflict with current class") {
+        assertFailsWith(PackageImportWeeder.SingleNameImportImportsSameTypeAsIsDeclared::class, {
+            subject("""
+                import test.A;
+
+                public class A {
+                    public A() {}
+                }
+            """.trimIndent())
+        })
+    }
+
+    it("should not allow 2 single name imports") {
+        val program = """|
+            |import test.B;
+            |import test.util.B;
+            |
+            |public class A {
+            |   public A() {}
+            |}
+        """.trimMargin()
+
+        assertFailsWith(PackageImportWeeder.DuplicateSingleNameImport::class, {
+            subject(program)
+        })
+    }
+
+    it("should not allow class and package name to be the same") {
+        val program = """|
+            |package A;
+            |
+            |public class A {
+            |   public A() {}
+            |}
+        """.trimMargin()
+
+        subject(program)
+    }
+
+    it("should not allow interface and package name to be the same") {
+        val program = """|
+            |package A;
+            |
+            |public interface A {
+            |}
+        """.trimMargin()
+
+        subject(program)
+    }
+
 })
