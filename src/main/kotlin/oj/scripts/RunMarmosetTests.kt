@@ -1,10 +1,16 @@
 package oj.scripts
 
 import java.io.File
+import java.io.BufferedReader
+import java.io.InputStream
+import java.io.InputStreamReader
+
+
+const val MARMOSET_DIR = "./test/marmoset"
 
 fun main(args: Array<String>) {
-    val testSuite = "A3"
-    val stdlib = when (testSuite) {
+    val assignment = "A3"
+    val stdlibVersion = when (assignment) {
         "A2" -> "2.0"
         "A3" -> "3.0"
         "A4" -> "4.0"
@@ -14,51 +20,86 @@ fun main(args: Array<String>) {
         }
     }
 
+    println("Building joosc...")
 
-    val testBaseDir = "./test/marmoset"
-    val testLocation = "$testBaseDir/$testSuite"
-    val tests = File(testLocation).list()
+    if (exec("make") != 0) {
+        System.err.println("Build failed")
+        System.exit(1)
+    }
 
-    val testResults = mutableListOf<String>()
-    val stdlibFiles = File("$testBaseDir/stdlib/$stdlib").walkTopDown().filter({ it.extension == "java" }).joinToString(" ")
+    println()
 
-    for (test in tests) {
-        val shouldFail = test.startsWith("Je")
-        val testFiles = File("$testLocation/$test").walkTopDown().joinToString(" ")
+    val TEST_DIR = "$MARMOSET_DIR/$assignment"
+    val STDLIB_DIR = "$MARMOSET_DIR/stdlib/$stdlibVersion"
 
-        val process = Runtime.getRuntime().exec("./joosc $stdlibFiles $testFiles")
-        println("Running test: $test")
+    val stdlibFiles = getAllJavaFiles(STDLIB_DIR)
+    val tests = File(TEST_DIR).list().sorted()
 
-        process.waitFor()
+    var testsPassed = 0
 
-        if (shouldFail) {
-            if (process.exitValue() == 42) {
-                testResults.add("PASS: $test")
-            } else {
-                testResults.add("FAILED: $test")
-            }
+    for ((testFile, testNum) in tests.zip(IntRange(0, tests.size))) {
+        val testFiles = getAllJavaFiles("$TEST_DIR/$testFile")
+        val (exitValue, error, output) = execHideIO("./joosc", *stdlibFiles, *testFiles)
+
+        val testResultPrefix = "[${format(testNum)}/${format(tests.size - 1)}]"
+        val shouldTestFail = testFile.startsWith("Je")
+
+        if (shouldTestFail && exitValue == 42 || !shouldTestFail && exitValue == 0) {
+            testsPassed += 1
+            System.out.println("$testResultPrefix PASS: $testFile")
         } else {
-            if (process.exitValue() == 0) {
-                testResults.add("PASS: $test")
+            System.err.println("$testResultPrefix FAILED: $testFile")
+            if (shouldTestFail) {
+                System.err.println(output)
             } else {
-                testResults.add("FAILED: $test")
+                System.err.println(error)
             }
         }
     }
 
-    for (j in IntRange(0, 4)) {
-        for (i in IntRange(0, 100)) {
-            print("*")
+    println()
+    println("Tests passed: ${format(testsPassed)}/${format(tests.size)}")
+}
+
+fun getAllJavaFiles(pathname: String): Array<String> {
+    return File(pathname).walkTopDown()
+        .filter({ it.extension == "java" })
+        .map({ it.toString() })
+        .toList()
+        .toTypedArray()
+}
+
+fun format(n: Int, padding: Int = 3): String {
+    return "$n".padStart(padding, ' ')
+}
+
+fun exec(command: String, vararg arg: String): Int {
+    val process = ProcessBuilder().inheritIO().command(command, *arg).start()
+    return process.waitFor()
+}
+
+fun execHideIO(command: String, vararg arg: String): Triple<Int, String, String> {
+    val process = ProcessBuilder().command(command, *arg).start()
+    val error = streamToString(process.errorStream)
+    val output = streamToString(process.inputStream)
+    val exitCode = process.waitFor()
+    return Triple(exitCode, error, output)
+}
+
+fun streamToString(stream: InputStream) : String {
+    val reader = BufferedReader(InputStreamReader(stream))
+    val builder = StringBuilder()
+    var line: String?
+    while (true) {
+        line = reader.readLine()
+        if (line == null) {
+            break
         }
 
-        println("")
+        builder.append(line)
+        builder.append(System.getProperty("line.separator"))
     }
+    val result = builder.toString()
 
-    testResults
-        .sortBy({ it -> it.replace("PASS:", "").replace("FAILED:", "")})
-
-    testResults
-        .forEach({ testResult ->
-            println(testResult)
-        })
+    return result
 }
