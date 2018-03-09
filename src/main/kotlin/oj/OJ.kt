@@ -13,31 +13,29 @@ class InvalidClassOrInterfaceNameError(message: String) : Exception(message)
 class InvalidFileNameError(message: String) : Exception(message)
 
 fun main(args: Array<String>) {
-    if (args.isEmpty()) {
-        System.exit(42)
-    }
-
-    val filenames = args.toList()
-//    val filenames = listOf(
-//        "./test/marmoset/stdlib/3.0/java/io/OutputStream.java",
-//        "./test/marmoset/stdlib/3.0/java/io/PrintStream.java",
-//        "./test/marmoset/stdlib/3.0/java/io/Serializable.java",
-//        "./test/marmoset/stdlib/3.0/java/lang/Boolean.java",
-//        "./test/marmoset/stdlib/3.0/java/lang/Byte.java",
-//        "./test/marmoset/stdlib/3.0/java/lang/Character.java",
-//        "./test/marmoset/stdlib/3.0/java/lang/Class.java",
-//        "./test/marmoset/stdlib/3.0/java/lang/Cloneable.java",
-//        "./test/marmoset/stdlib/3.0/java/lang/Integer.java",
-//        "./test/marmoset/stdlib/3.0/java/lang/Number.java",
-//        "./test/marmoset/stdlib/3.0/java/lang/Object.java",
-//        "./test/marmoset/stdlib/3.0/java/lang/Short.java",
-//        "./test/marmoset/stdlib/3.0/java/lang/String.java",
-//        "./test/marmoset/stdlib/3.0/java/lang/System.java",
-//        "./test/marmoset/stdlib/3.0/java/util/Arrays.java",
-//        "test/marmoset/a2/Je_4_ProtectedOverride_FromSuperclassAndInterface/java/lang/Comparable.java",
-//        "test/marmoset/a2/Je_4_ProtectedOverride_FromSuperclassAndInterface/Foo.java",
-//        "test/marmoset/a2/Je_4_ProtectedOverride_FromSuperclassAndInterface/Main.java"
-//    )
+//    if (args.isEmpty()) {
+//        System.exit(42)
+//    }
+//
+//    val filenames = args.toList()
+    val filenames = listOf(
+        "./test/marmoset/stdlib/3.0/java/io/OutputStream.java",
+        "./test/marmoset/stdlib/3.0/java/io/PrintStream.java",
+        "./test/marmoset/stdlib/3.0/java/io/Serializable.java",
+        "./test/marmoset/stdlib/3.0/java/lang/Boolean.java",
+        "./test/marmoset/stdlib/3.0/java/lang/Byte.java",
+        "./test/marmoset/stdlib/3.0/java/lang/Character.java",
+        "./test/marmoset/stdlib/3.0/java/lang/Class.java",
+        "./test/marmoset/stdlib/3.0/java/lang/Cloneable.java",
+        "./test/marmoset/stdlib/3.0/java/lang/Integer.java",
+        "./test/marmoset/stdlib/3.0/java/lang/Number.java",
+        "./test/marmoset/stdlib/3.0/java/lang/Object.java",
+        "./test/marmoset/stdlib/3.0/java/lang/Short.java",
+        "./test/marmoset/stdlib/3.0/java/lang/String.java",
+        "./test/marmoset/stdlib/3.0/java/lang/System.java",
+        "./test/marmoset/stdlib/3.0/java/util/Arrays.java",
+        "test/marmoset/a3/J1_namelinking3.java"
+    )
 
     try {
         val baseDfas = BASE_DFA_NAMES
