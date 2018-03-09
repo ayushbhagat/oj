@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 SCRIPT=`basename "$0"`
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
@@ -10,14 +10,17 @@ if [ "$#" -ne 1 ]; then
 fi
 
 TEST=./test/marmoset/$1
+RESULT=
 
 if [ -d "$TEST" -o -f "$TEST" ]; then
-  find "$TEST" -iname '*.java' | xargs -I {} echo '"{}",'
+  RESULT=$(find "$TEST" -iname '*.java' | xargs -I {} echo '"{}",')
 else
   if [ -f "$TEST.java" ]; then
-    find "$TEST.java" -iname '*.java' | xargs -I {} echo '"{}",'
+    RESULT=$(find "$TEST.java" -iname '*.java' | xargs -I {} echo '"{}",')
   else
     >&2 echo "ERROR: Test not found"
     exit 1
   fi
 fi
+
+echo $RESULT | sed -e 's|,$||' | perl -p -e 's/,\s/,\n/g'
