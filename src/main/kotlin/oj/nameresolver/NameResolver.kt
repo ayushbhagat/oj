@@ -3,6 +3,7 @@ package oj.nameresolver
 import oj.models.*
 
 open class NameResolutionError(reason: String) : Exception(reason)
+open class TypeCheckingError(reason: String): Exception(reason)
 open class HierarchyCheckingError(reason: String) : NameResolutionError(reason)
 open class UnimplementedAbstractOrInterfaceMethodException(className: String) : HierarchyCheckingError("Non-abstract class \"$className\" has not implemented all interface or abstract methods.")
 open class ClassExtendsNonClass(className: String, interfaceName: String) : HierarchyCheckingError("Class \"$className\" extends \"$interfaceName\"")
@@ -21,267 +22,8 @@ open class DuplicateMethodsDetectedInInterface(interfaceName: String, methodName
 open class TwoMethodsInInterfaceHierarchyWithSameSignatureButDifferentReturnTypes(interfaceName: String, methodName: String): HierarchyCheckingError("Two methods with the same name, \"$methodName\", but different return type exist in the interface hierarchy (including interface methods) of interface \"$interfaceName\"")
 open class ConcreteMethodImplementsPublicMethodWithProtectedVisibility(className: String, methodName: String) : HierarchyCheckingError("Concrete method \"$className.$methodName\" implements \"public\" method with \"protected\" visibility.")
 
-
 val isClassOrInterfaceDeclaration = { node: CSTNode ->
     node.name == "ClassDeclaration" || node.name == "InterfaceDeclaration"
-}
-
-
-fun areTypesTheSame(type: CSTNode, otherType: CSTNode) : Boolean {
-    if (type.name != "Type" || otherType.name != "Type") {
-        throw NameResolutionError("Tried to compare non-types")
-    }
-
-    if (type.children[0].name != otherType.children[0].name) {
-        return false
-    }
-
-    if (type.children[0].name == "PrimitiveType") {
-        val primitiveType = type.children[0]
-        val otherPrimitiveType = otherType.children[0]
-
-        if (primitiveType.children[0].name != otherPrimitiveType.children[0].name) {
-            return false
-        }
-    } else {
-        val referenceType = type.children[0]
-        val otherReferenceType = otherType.children[0]
-
-        if (referenceType.children[0].name != otherReferenceType.children[0].name) {
-            return false
-        }
-
-        if (referenceType.children[0].name == "ClassOrInterfaceType") {
-            val typeName = referenceType.children[0].getChild("Name")
-            val otherTypeName = otherReferenceType.children[0].getChild("Name")
-
-            if (typeName.getDeclaration() != otherTypeName.getDeclaration()) {
-                return false
-            }
-        } else {
-            val arrayType = referenceType.children[0]
-            val otherArrayType = otherReferenceType.children[0]
-
-            if (arrayType.children[0].name != otherArrayType.children[0].name) {
-                return false
-            }
-
-            if (arrayType.children[0].name == "PrimitiveType") {
-                if (arrayType.children[0] != otherArrayType.children[0]) {
-                    return false
-                }
-            } else {
-                val typeName = arrayType.children[0]
-                val otherTypeName = otherArrayType.children[0]
-
-                if (typeName.getDeclaration() != otherTypeName.getDeclaration()) {
-                    return false
-                }
-            }
-        }
-    }
-
-    return true
-}
-
-fun areMethodSignaturesTheSame(declarator: CSTNode, otherDeclarator: CSTNode): Boolean {
-    val isComparingMethodDeclarators = declarator.name == "MethodDeclarator" && otherDeclarator.name == "MethodDeclarator"
-    val isComparingConstructorDeclarators = declarator.name == "ConstructorDeclarator" && otherDeclarator.name == "ConstructorDeclarator"
-
-    if (!isComparingMethodDeclarators && !isComparingConstructorDeclarators) {
-        throw NameResolutionError("Tried to compare non-method declarators")
-    }
-
-    val methodName = if (isComparingMethodDeclarators)
-        declarator.getChild("IDENTIFIER").lexeme
-    else
-        declarator.getChild("SimpleName").getChild("IDENTIFIER").lexeme
-
-
-    val otherMethodName = if (isComparingMethodDeclarators)
-        otherDeclarator.getChild("IDENTIFIER").lexeme
-    else
-        otherDeclarator.getChild("SimpleName").getChild("IDENTIFIER").lexeme
-
-    if (methodName != otherMethodName) {
-        return false
-    }
-
-    val formalParameters = declarator.getDescendants("FormalParameter")
-    val otherFormalParameters = otherDeclarator.getDescendants("FormalParameter")
-
-    if (otherFormalParameters.size != formalParameters.size) {
-        return false
-    }
-
-    for (i in IntRange(0, otherFormalParameters.size - 1)) {
-        val formalParameter = formalParameters[i]
-        val otherFormalParameter = otherFormalParameters[i]
-
-        val formalParameterType = formalParameter.getChild("Type")
-        val otherFormalParameterType = otherFormalParameter.getChild("Type")
-
-        if (!areTypesTheSame(formalParameterType, otherFormalParameterType)) {
-            return false
-        }
-    }
-
-    return true
-}
-
-fun areMethodReturnTypesTheSame(methodHeader: CSTNode, otherMethodHeader: CSTNode): Boolean {
-    if (methodHeader.name != "MethodHeader" || otherMethodHeader.name != "MethodHeader") {
-        throw NameResolutionError("Tried to compare non-method headers")
-    }
-
-    val methodReturnType = methodHeader.children[1]
-    val otherMethodReturnType = otherMethodHeader.children[1]
-
-    if (methodReturnType.name != otherMethodReturnType.name) {
-        return false
-    }
-
-    if (methodReturnType.name == "Type") {
-        if (!areTypesTheSame(methodReturnType, otherMethodReturnType)) {
-            return false
-        }
-    }
-
-    return true
-}
-
-fun canMethodHeadersReplaceOneAnother(methodHeader1: CSTNode, methodHeader2: CSTNode): Boolean {
-    val methodDeclarator1 = methodHeader1.getChild("MethodDeclarator")
-    val methodDeclarator2 = methodHeader2.getChild("MethodDeclarator")
-
-    val methodName1 = methodDeclarator1.getChild("IDENTIFIER").lexeme
-    val methodName2 = methodDeclarator2.getChild("IDENTIFIER").lexeme
-
-    if (areMethodSignaturesTheSame(methodDeclarator1, methodDeclarator2)) {
-        if (!areMethodReturnTypesTheSame(methodHeader1, methodHeader2)) {
-            throw HierarchyCheckingError("Methods \"$methodName1\" and \"$methodName2\" have the same signature but different return types, which is illegal.")
-        }
-
-        return true
-    }
-
-    return false
-}
-
-val nodesThatCanHaveModifiers = setOf("Modifiers", "ClassDeclaration", "FieldDeclaration", "MethodHeader", "MethodDeclaration", "AbstractMethodDeclaration", "ConstructorDeclaration", "InterfaceDeclaration")
-
-class TriedToAccessModifiersOfAUnupportedCSTNode(nodeName: String): Exception("Tried to access modifiers in a non-supported CSTNode: $nodeName")
-
-fun getModifiers(declaration: CSTNode): Set<String> {
-    if (!nodesThatCanHaveModifiers.contains(declaration.name)) {
-        throw TriedToAccessModifiersOfAUnupportedCSTNode(declaration.name)
-    }
-
-    val modifiersNode =
-        if (declaration.name == "MethodDeclaration" || declaration.name == "AbstractMethodDeclaration") {
-            declaration.getChild("MethodHeader").getChild("Modifiers")
-        } else {
-            declaration.getChild("Modifiers")
-        }
-
-    val modifierNodes = modifiersNode.getDescendants("Modifier")
-
-    return modifierNodes.map({ modifierNode -> modifierNode.children[0].name }).toSet()
-}
-
-class TriedToGetNameOfAnUnsupportedCSTNode(nodeName: String): Exception("Tried to get name of of an unsupported CSTNode: $nodeName")
-
-fun getDeclarationName(declaration: CSTNode): String {
-    if (declaration.name == "ClassDeclaration" || declaration.name == "InterfaceDeclaration") {
-        return declaration.getChild("IDENTIFIER").lexeme
-    }
-
-    if (declaration.name == "AbstractMethodDeclaration" || declaration.name == "MethodDeclaration") {
-        val methodHeader = declaration.getChild("MethodHeader")
-        val methodDeclarator = methodHeader.getChild("MethodDeclarator")
-        return methodDeclarator.getChild("IDENTIFIER").lexeme
-    }
-
-    if (declaration.name == "LocalVariableDeclaration") {
-        val variableDeclarator = declaration.getChild("VariableDeclarator")
-        return variableDeclarator.getChild("IDENTIFIER").lexeme
-    }
-
-
-    if (declaration.name == "FieldDeclaration") {
-        val thirdChild = declaration.children[2]
-        if (thirdChild.name == "IDENTIFIER") {
-            return thirdChild.lexeme
-        }
-
-        val variableDeclarator = thirdChild
-        return variableDeclarator.getChild("IDENTIFIER").lexeme
-    }
-
-    throw TriedToGetNameOfAnUnsupportedCSTNode(declaration.name)
-}
-
-fun isAncestorOf(child: CSTNode, potentialParent: CSTNode): Boolean {
-    if (child.name != "ClassDeclaration" || potentialParent.name != "ClassDeclaration") {
-        return false
-    }
-
-    if (child === potentialParent) {
-        return true
-    }
-
-    val superOptNode = child.getChild("SuperOpt")
-    val superNode = if (superOptNode.children.size == 1) superOptNode.getChild("Super") else null
-
-    if (superNode == null) {
-        return false
-    }
-
-    return isAncestorOf(superNode.getDeclaration(), potentialParent)
-}
-
-val declarationsWithTypes = setOf("FieldDeclaration", "MethodDeclaration", "FormalParameter", "AbstractMethodDeclaration", "LocalVariableDeclaration")
-
-fun resolveTypeNode(typeNode: CSTNode) : Type {
-    if (typeNode.children[0].name == "ReferenceType") {
-        val referenceType = typeNode.getChild("ReferenceType")
-
-        if (referenceType.children[0].name == "ArrayType") {
-            val arrayType = referenceType.getChild("ArrayType")
-
-            if (arrayType.children[0].name == "PrimitiveType") {
-                val primitiveType = arrayType.getChild("PrimitiveType")
-                return Type(primitiveType.children[0], true)
-            }
-
-            val name = arrayType.getChild("Name")
-            return Type(name.getDeclaration(), true)
-        }
-
-        val classOrInterfaceType = referenceType.getChild("ClassOrInterfaceType")
-        val name = classOrInterfaceType.getChild("Name")
-        return Type(name.getDeclaration(), false)
-    }
-
-    val primitiveType = typeNode.getChild("PrimitiveType")
-    return Type(primitiveType.children[0], false)
-}
-
-class TriedToGetDeclarationTypeOfAnUnsupportedCSTNode(nodeName: String): Exception("Tried to get declaration type of an unsupported CSTNode: $nodeName")
-
-fun getDeclarationType(node: CSTNode): Type {
-    when {
-        node.name in setOf("FieldDeclaration", "FormalParameter", "LocalVariableDeclaration") -> {
-            return resolveTypeNode(node.getChild("Type"))
-        }
-        node.name == "MethodDeclaration" || node.name =="AbstractMethodDeclaration" -> {
-            val methodHeader = node.getChild("MethodHeader")
-            val methodReturnType = methodHeader.getChild("Type")
-            return resolveTypeNode(methodReturnType)
-        }
-    }
-
-    throw TriedToGetDeclarationTypeOfAnUnsupportedCSTNode(node.name)
 }
 
 val PRIMITIVE_TYPE_NAMES = setOf("byte", "short", "int", "char", "boolean")
@@ -296,9 +38,11 @@ class NameResolutionVisitor(
     }
 
     private var resolutionDepth = ResolutionDepth.All
-
     private val nameResolution = mutableMapOf<CSTNode, CSTNode>()
-    var importOnDemandDeclarationEnvironment: Environment = Environment()
+    private var importOnDemandDeclarationEnvironment: Environment = Environment()
+    private var currentFieldDeclaration: CSTNode? = null
+    private var currentMethodDeclaration: CSTNode? = null
+    private var currentLeftHandSide: CSTNode? = null
 
     fun attachImportOnDemandEnvironment(declarations: Environment) {
         importOnDemandDeclarationEnvironment = declarations
@@ -318,6 +62,52 @@ class NameResolutionVisitor(
 
     fun addNameResolution(nameNode: CSTNode, declaration: CSTNode) {
         nameNode.setDeclaration(declaration)
+    }
+
+    class TriedToGetPackageOfNonType(nodeType: String): Exception("Tried to access package of a non-type CSTNode: \"$nodeType\"")
+    class PackageNotFoundForType(typeName: String): Exception("Package not found for type \"$typeName\"")
+
+    fun getPackageOfType(node: CSTNode): String {
+        if (node.name != "ClassDeclaration" && node.name != "InterfaceDeclaration") {
+            throw TriedToGetPackageOfNonType(node.name)
+        }
+
+        for ((packageName, types) in typesDeclaredInPackages) {
+            if (types.containsValue(node)) {
+                return packageName
+            }
+        }
+
+        throw PackageNotFoundForType(getDeclarationName(node))
+    }
+
+    fun canAccessProtectedMethodsOf(currentClass: CSTNode, otherClass: CSTNode): Boolean {
+        if (currentClass.name != "ClassDeclaration" && otherClass.name != "ClassDeclaration") {
+            throw Exception("Expected currentClass and otherClass to be ClassDeclarations")
+        }
+
+        val isInSameHierarchy = isSubtype(currentClass, otherClass) || isSubtype(otherClass, currentClass)
+        val isInSamePackage = getPackageOfType(currentClass) == getPackageOfType(otherClass)
+
+        return isInSameHierarchy || isInSamePackage
+    }
+
+    fun getAccessibleMembers(currentClass: CSTNode, typeToInspect: CSTNode): List<CSTNode> {
+        return if (typeToInspect.name == "ClassDeclaration") {
+            val classToInspect = typeToInspect
+            val canAccessProtectedMethods = canAccessProtectedMethodsOf(currentClass, classToInspect)
+
+            getClassInheritedDescendants(classToInspect, fun (node: CSTNode): Boolean {
+                if (node.name != "FieldDeclaration" && node.name != "MethodDeclaration") {
+                    return false
+                }
+
+                val modifiers = getModifiers(node)
+                return (canAccessProtectedMethods || "public" in modifiers)
+            }) + getAllMethodsOfAllInterfacesImplementedInClassHierarchyOf(classToInspect)
+        } else {
+            getInterfaceInheritedMethods(typeToInspect)
+        }
     }
 
     private fun getInterfaceInheritedMethods(interfaceDeclaration: CSTNode, typeName: String = getDeclarationName(interfaceDeclaration), visited: MutableSet<CSTNode> = mutableSetOf()): List<CSTNode> {
@@ -362,6 +152,30 @@ class NameResolutionVisitor(
         return abstractMethodDeclarations + extendedAbstractMethods
     }
 
+    /**
+     * Gets all the methods from all the interfaces implemented by this class or any classes in its hierarchy
+     */
+    fun getAllMethodsOfAllInterfacesImplementedInClassHierarchyOf(classDeclaration: CSTNode): List<CSTNode> {
+        if (classDeclaration.name != "ClassDeclaration") {
+            throw CSTNodeError("Tried to call getAllInterfacesImplementedByClass on a non-class: ${classDeclaration.name}")
+        }
+
+        val extendedInterfaces = classDeclaration.getChild("InterfacesOpt").getDescendants("Name").map({ it.getDeclaration() })
+        val abstractMethods = extendedInterfaces.flatMap({ getInterfaceInheritedMethods(it) })
+
+        val superOpt = classDeclaration.getChild("SuperOpt")
+
+        val superClassAbstractMethods =
+            if (superOpt.children.size == 1) {
+                val superClassDeclaration = superOpt.getDescendant("Name").getDeclaration()
+                getAllMethodsOfAllInterfacesImplementedInClassHierarchyOf(superClassDeclaration)
+            } else {
+                listOf()
+            }
+
+        return abstractMethods + superClassAbstractMethods
+    }
+
 
     private fun getClassInheritedDescendants(classDeclaration: CSTNode, predicate: (CSTNode) -> Boolean) : List<CSTNode> {
         if (classDeclaration.name != "ClassDeclaration") {
@@ -399,11 +213,14 @@ class NameResolutionVisitor(
             }
 
             if (environment.contains(predicate)) {
-                addNameResolution(nameNode, environment.find(predicate))
+                val typeDeclaration = environment.find(predicate)
+                addNameResolution(nameNode, typeDeclaration)
+                nameNode.setType(Type(typeDeclaration, false))
             } else {
                 val iodLookup = importOnDemandDeclarationEnvironment.findAll(typeName)
                 if (iodLookup.size == 1) {
                     addNameResolution(nameNode, iodLookup[0])
+                    nameNode.setType(Type(iodLookup[0], false))
                 } else if (iodLookup.size > 1) {
                     throw NameResolutionError("TypeName \"$typeName\" maps to types in more than one import on demand declarations")
                 } else {
@@ -468,6 +285,71 @@ class NameResolutionVisitor(
             }
 
             addNameResolution(nameNode, typesInPackage[typeName]!!)
+            nameNode.setType(Type(typesInPackage[typeName]!!, false))
+        }
+    }
+
+    fun validateUsageOfFieldDeclaration(fieldDeclaration: CSTNode) {
+        if (getCurrentMethodDeclaration() != null) {
+            val currentMethodDeclaration = getCurrentMethodDeclaration()!!
+
+            val isMethodStatic = "static" in getModifiers(currentMethodDeclaration)
+            val isFieldStatic =  "static" in getModifiers(fieldDeclaration)
+
+            if (isMethodStatic && !isFieldStatic) {
+                val fieldName = getDeclarationName(fieldDeclaration)
+                val methodName = getDeclarationName(currentMethodDeclaration)
+                throw NameResolutionError("Tried to access an instance field \"$fieldName\" in a static method \"$methodName\"")
+            }
+        }
+
+        if (getCurrentFieldDeclaration() != null) {
+            val currentFieldDeclaration = getCurrentFieldDeclaration()!!
+            val fieldBeingUsedInDeclaration = fieldDeclaration
+
+            val isCurrentFieldDeclarationStatic = "static" in getModifiers(currentFieldDeclaration)
+            val isFieldBeingUsedInDeclarationStatic = "static" in getModifiers(fieldBeingUsedInDeclaration)
+
+            if (isCurrentFieldDeclarationStatic && !isFieldBeingUsedInDeclarationStatic) {
+                val currentFieldDeclarationName = getDeclarationName(currentFieldDeclaration)
+                val fieldBeingUsedInDeclarationName = getDeclarationName(fieldBeingUsedInDeclaration)
+
+                throw NameResolutionError("Tried to use an instance field \"$fieldBeingUsedInDeclarationName\" in a static field declaration \"$currentFieldDeclarationName\"")
+            }
+
+            var shouldCheckForwardReference = true
+
+            if (getCurrentLeftHandSide() != null) {
+                val currentLeftHandSide = getCurrentLeftHandSide()!!
+
+                if (currentLeftHandSide.children[0].name == "Name") {
+                    val nameNode = currentLeftHandSide.getChild("Name")
+                    val identifiers = nameNode.getDescendants("IDENTIFIER").map({ it.lexeme })
+
+                    if (identifiers.size == 1) {
+                        val name = identifiers[0]
+                        if (getDeclarationName(currentFieldDeclaration) == name) {
+                            shouldCheckForwardReference = false
+                        }
+                    }
+                }
+            }
+
+            if (shouldCheckForwardReference && isCurrentFieldDeclarationStatic == isFieldBeingUsedInDeclarationStatic) {
+                val currentClassDeclaration = getCurrentClassDeclaration()
+
+                val allFieldDeclarationsInClassDeclaration = currentClassDeclaration.getDescendants("FieldDeclaration")
+
+                val currentFieldDeclarationIndex = allFieldDeclarationsInClassDeclaration.indexOf(currentFieldDeclaration)
+                val fieldBeingUsedInDeclarationIndex = allFieldDeclarationsInClassDeclaration.indexOf(fieldBeingUsedInDeclaration)
+
+                if (currentFieldDeclarationIndex <= fieldBeingUsedInDeclarationIndex) {
+                    val currentFieldDeclarationName = getDeclarationName(currentFieldDeclaration)
+                    val fieldBeingUsedInDeclarationName = getDeclarationName(fieldBeingUsedInDeclaration)
+
+                    throw NameResolutionError("Illegal forward reference. Field \"$fieldBeingUsedInDeclarationName\" is declared after it's used in field declaration of \"$currentFieldDeclarationName\"")
+                }
+            }
         }
     }
 
@@ -478,6 +360,12 @@ class NameResolutionVisitor(
             // Ensure that the expression name is defined. If so, add it to the name resolution, otherwise throw error.
             val declarationNode = environment.find(expressionName)
             addNameResolution(nameNode, declarationNode)
+
+            if (declarationNode.name == "FieldDeclaration") {
+                validateUsageOfFieldDeclaration(declarationNode)
+            }
+
+            nameNode.setType(getDeclarationType(declarationNode))
         } else {
             val ambiguousPrefix = name.subList(0, name.size - 1)
             val id = name.last()
@@ -508,14 +396,11 @@ class NameResolutionVisitor(
                     }
 
                     addNameResolution(nameNode, declarationNode)
+                    nameNode.setType(getDeclarationType(declarationNode))
                 }
 
                 ReclassifiedNameType.Expression -> {
-                    val typeDeclaration = ambiguousPrefixReclassification.second!!.type
-
-                    if (typeDeclaration.name in PRIMITIVE_TYPE_NAMES) {
-                        throw NameResolutionError("Tried to access field of an expression that evaluates to primitive type \"${typeDeclaration.name}\"")
-                    }
+                    val typeDeclarationOfExpression = ambiguousPrefixReclassification.second!!.type
 
                     val isTypeArray = ambiguousPrefixReclassification.second!!.isArray
                     if (isTypeArray) {
@@ -524,94 +409,25 @@ class NameResolutionVisitor(
                         }
                         // TODO: Think about what does name node resolve to.
                         // TODO: Have to make sure that this doesn't appear in a place where it can be assigned to
+
+                        nameNode.setType(Type(CSTNode("int"), false))
                     } else {
-                        val currentClass = environment.find({ (_, node) -> node.name == "ClassDeclaration" })
-                        val members = getAccessibleMembers(currentClass, typeDeclaration).filter({ it.name == "FieldDeclaration" && getDeclarationName(it) == id })
+                        if (typeDeclarationOfExpression.name in PRIMITIVE_TYPE_NAMES) {
+                            throw NameResolutionError("Tried to access field of an expression that evaluates to primitive type \"${typeDeclarationOfExpression.name}\"")
+                        }
+
+                        val currentClass = getCurrentClassDeclaration()
+                        val members = getAccessibleMembers(currentClass, typeDeclarationOfExpression)
+                            .filter({ it.name == "FieldDeclaration" && getDeclarationName(it) == id && "static" !in getModifiers(it) })
 
                         if (members.isEmpty()) {
-                            val expressionTypeName = getDeclarationName(typeDeclaration)
-                            throw NameResolutionError("Prefix \"$ambiguousPrefix\" is ExpressionName which refers to type \"$expressionTypeName\", but failed to find instance field \"$id\" said type.")
+                            val expressionTypeName = getDeclarationName(typeDeclarationOfExpression)
+                            throw NameResolutionError("Prefix \"${ambiguousPrefix.joinToString(".")}\" is ExpressionName which refers to type \"$expressionTypeName\", but failed to find instance field \"$id\" said type.")
                         }
 
                         val fieldDeclarationNode = members[0]
                         addNameResolution(nameNode, fieldDeclarationNode)
-                    }
-                }
-            }
-        }
-    }
-
-    fun resolveMethodName(nameNode: CSTNode) {
-        val name = nameNode.getDescendants("IDENTIFIER").map({ it.lexeme })
-        val methodName = name.joinToString(".")
-
-        if (name.size == 1) {
-            val methodName = name[0]
-            // Ensure that the method name is defined. If so, add it to the name resolution, otherwise throw error.
-            val declarationNode = environment.find({ it.name == methodName && it.node.name == "MethodDeclaration" })
-            addNameResolution(nameNode, declarationNode)
-        } else {
-
-            val ambiguousPrefix = name.subList(0, name.size - 1)
-            val ambiguousPrefixReclassification = resolveAmbiguousName(ambiguousPrefix)
-            val id = name.last()
-
-            when (ambiguousPrefixReclassification.first) {
-                ReclassifiedNameType.Package -> {
-                    val packageName = ambiguousPrefix.joinToString(".")
-                    throw NameResolutionError("In MethodName \"$methodName\": Ambiguous prefix \"$packageName\" resolved to a package, which is illegal.")
-                }
-
-                ReclassifiedNameType.Type -> {
-                    val classDeclaration = ambiguousPrefixReclassification.second!!.type
-                    if (classDeclaration.name != "ClassDeclaration") {
-                        throw NameResolutionError("In MethodName \"$methodName\": Tried to access static method on a(n) \"${classDeclaration.name}\" node called \"${getDeclarationName(classDeclaration)}\". Statics are only supported on classes.")
-                    }
-
-                    val methods = getClassInheritedDescendants(classDeclaration, {
-                        it.name == "MethodDeclaration" && getDeclarationName(it) == id
-                    })
-
-                    if (methods.isEmpty()) {
-                        throw NameResolutionError("In MethodName \"$methodName\": Prefix \"${ambiguousPrefix.joinToString(".")}\" is TypeName, but method \"$id\" doesn't exist in the type.")
-                    }
-
-                    val declarationNode = methods[0]
-                    if ("static" !in getModifiers(declarationNode)) {
-                        throw NameResolutionError("In MethodName \"$methodName\": Tried to access non-static method \"${getDeclarationName(methods[0])}\" from a static context.")
-                    }
-
-                    addNameResolution(nameNode, declarationNode)
-                }
-
-                ReclassifiedNameType.Expression -> {
-                    val typeDeclaration = ambiguousPrefixReclassification.second!!.type
-
-                    if (typeDeclaration.name in PRIMITIVE_TYPE_NAMES) {
-                        throw NameResolutionError("In MethodName \"$methodName\": Tried to access method of an expression that evaluates to primitive type \"${typeDeclaration.name}\"")
-                    }
-
-                    val isTypeArray = ambiguousPrefixReclassification.second!!.isArray
-                    if (isTypeArray) {
-                        throw NameResolutionError("In MethodName \"$methodName\": Ambiguous name resolved to an array, which don't have any methods.")
-                    } else {
-                        // TODO: What if type declaration is an interface?
-
-
-                        val currentClass = environment.find({ (_, node) -> node.name == "ClassDeclaration" })
-
-                        // TODO: This isn't safe. We need to compare signatures when assigning
-                        val methods = getAccessibleMembers(currentClass, typeDeclaration).filter({ node ->
-                            node.name == "MethodDeclaration" && getDeclarationName(node) == id 
-                        })
-
-                        if (methods.isEmpty()) {
-                            val expressionTypeName = getDeclarationName(typeDeclaration)
-                            throw NameResolutionError("In MethodName \"$methodName\": Prefix \"${ambiguousPrefix.joinToString(".")}\" is an ExpressionName which refers to type \"$expressionTypeName\", which doesn't have an instance method called \"$id\".")
-                        }
-
-                        val fieldDeclarationNode = methods[0]
-                        addNameResolution(nameNode, fieldDeclarationNode)
+                        nameNode.setType(getDeclarationType(fieldDeclarationNode))
                     }
                 }
             }
@@ -622,6 +438,145 @@ class NameResolutionVisitor(
         Package,
         Type,
         Expression
+    }
+
+    fun getClassFromIODEnvironment(name: String): CSTNode? {
+        if (importOnDemandDeclarationEnvironment.contains(name)) {
+            return importOnDemandDeclarationEnvironment.find(name)
+        }
+        return null
+    }
+
+    fun colonEquals(typeOfA: Type, typeOfB: Type): Boolean {
+        val areBothArraysOrNonArrays = typeOfA.isArray && typeOfB.isArray || !typeOfA.isArray && !typeOfB.isArray
+
+        val baseSuperClass = getClassFromIODEnvironment("Object")
+        val cloneableDeclaration = getClassFromIODEnvironment("Cloneable")
+        val serializableDeclaration = typesDeclaredInPackages["java.io"].orEmpty()["Serializable"]
+
+        val primitiveTypesWithoutNull = setOf("byte", "short", "int", "char", "boolean")
+        if (!typeOfB.isArray && !typeOfA.isArray && typeOfB.type.name in primitiveTypesWithoutNull && typeOfA.type.name in primitiveTypesWithoutNull) {
+            if (typeOfB.type.name == "byte") {
+                return typeOfA.type.name in listOf("short", "int", "byte")
+            }
+            if (typeOfB.type.name == "short") {
+                return typeOfA.type.name in listOf("short", "int")
+            }
+            if (typeOfB.type.name == "char") {
+                return typeOfA.type.name in listOf("char", "int")
+            }
+            if (typeOfB.type.name == "int") {
+                return typeOfA.type.name in listOf("int")
+            }
+            if (typeOfB.type.name == "boolean") {
+                return typeOfA.type.name in listOf("boolean")
+            }
+        } else if (typeOfB.isArray && (typeOfA.type == baseSuperClass || typeOfA.type == serializableDeclaration || typeOfA.type == cloneableDeclaration) && !typeOfA.isArray) {
+            // Goes in here for reference and primitive arrays.
+            return true
+        } else if (typeOfB.isArray && typeOfB.type.name in primitiveTypesWithoutNull) {
+            if (typeOfA.type.name == typeOfB.type.name && typeOfA.isArray) {
+                return true
+            }
+        } else if (typeOfB.type.name == "InterfaceDeclaration" && areBothArraysOrNonArrays) {
+            if (typeOfA.type == baseSuperClass) {
+                return true
+            } else if (isSubInterface(typeOfB.type, typeOfA.type)) {
+                return true
+            }
+        } else if (typeOfB.type.name == "ClassDeclaration" && areBothArraysOrNonArrays) {
+            if (typeOfA.type.name == "InterfaceDeclaration") {
+                if (isInterfaceImplementedByClass(typeOfA.type, typeOfB.type)) {
+                    return true
+                }
+            } else if (typeOfA.type.name == "ClassDeclaration") {
+                if (isSubClass(typeOfB.type, typeOfA.type) || typeOfA.type == baseSuperClass) {
+                    return true
+                }
+            }
+        } else if (typeOfB.type.name == "NULL") {
+            return typeOfA.isReference()
+        }
+
+        return false
+
+
+        /* val areBothArraysOrNonArrays = typeOfA.isArray && typeOfB.isArray || !typeOfA.isArray && !typeOfB.isArray
+        val areBothNonArrays = !typeOfA.isArray && !typeOfB.isArray
+        return when {
+            typeOfB.type.name == "boolean" -> typeOfA.type.name == "boolean" && areBothArraysOrNonArrays
+            typeOfB.type.name == "byte" -> typeOfA.type.name in listOf("short", "int") && areBothNonArrays || typeOfA.type.name == "byte" && areBothArraysOrNonArrays
+            typeOfB.type.name == "short" -> typeOfA.type.name == "int" && areBothNonArrays || typeOfA.type.name == "short" && areBothArraysOrNonArrays
+            typeOfB.type.name == "char" -> typeOfA.type.name == "int" && areBothNonArrays || typeOfA.type.name == "char" && areBothArraysOrNonArrays
+            typeOfB.type.name == "int" -> typeOfA.type.name == "int" && areBothArraysOrNonArrays
+            typeOfB.type.name == "NULL" -> typeOfA.type.name in listOf("ClassDeclaration", "InterfaceDeclaration") || typeOfA.isArray
+            else -> {
+                if (typeOfA.type.name != "ClassDeclaration" && typeOfA.type.name != "InterfaceDeclaration") {
+                    throw TypeError("Expected \"a\" to be a class or interface, but found a ${typeOfA.type.name}")
+                }
+
+                if (typeOfB.type.name != "ClassDeclaration" && typeOfB.type.name != "InterfaceDeclaration") {
+                    throw TypeError("Expected \"this\" to be a class or interface, but found a ${typeOfB.type.name}")
+                }
+
+                /**
+                 * typeOfA.type.name ∈ {InterfaceDeclaration, ClassDeclaration}
+                 * typeOfB.type.name ∈ {InterfaceDeclaration, ClassDeclaration}
+                 */
+
+                /**
+                 * interface A = class B, such that A ∈ implementedInterfaces(class B)
+                 * interface A[] = class B[], such that A ∈ implementedInterfaces(class B)
+                 */
+                if (typeOfA.type.name == "InterfaceDeclaration" && typeOfB.type.name == "ClassDeclaration" && areBothArraysOrNonArrays) {
+                    isInterfaceImplementedByClass(typeOfA.type, typeOfB.type)
+                } else
+
+                /**
+                 * Object = class
+                 * Object = interface
+                 * Object = class[]
+                 * Object = interface[]
+                 * Object[] = class[]
+                 * Object[] = interface[]
+                 * ❌ Object[] = class
+                 * ❌ Object[] = interface
+                 */
+                if (typeOfA.type === baseSuperClass) {
+                    if (typeOfA.isArray) {
+                        typeOfB.isArray
+                    } else {
+                        true
+                    }
+                } else
+
+                /**
+                 * class A = extends class A
+                 * class A[] = extends class A[]
+                 * interface B = extends interface B
+                 * interface B[] = extends interface B[]
+                 */
+                if (isSubtype(typeOfB.type, typeOfA.type) && areBothArraysOrNonArrays) {
+                    true
+                } else
+
+                /**
+                 * Cloneable = class[]
+                 * Cloneable = interface[]
+                 * Serializable = class[]
+                 * Serializable = interface[]
+                 */
+                if ((typeOfA.type === serializableDeclaration || typeOfA.type === cloneableDeclaration) && !typeOfA.isArray) {
+                    typeOfB.isArray
+                } else
+
+                /**
+                 * Rejects:
+                 * class = interface
+                 */
+                false
+            }
+        } */
     }
 
     fun lookupTypeName(typeName: String): CSTNode? {
@@ -640,22 +595,6 @@ class NameResolutionVisitor(
         return null
     }
 
-    fun getAccessibleMembers(currentClass: CSTNode, typeToInspect: CSTNode): List<CSTNode> {
-        return if (typeToInspect.name == "ClassDeclaration") {
-            val inSameHierarchy = isAncestorOf(currentClass, typeToInspect) || isAncestorOf(typeToInspect, currentClass)
-
-            getClassInheritedDescendants(typeToInspect, { node ->
-                val modifiers = getModifiers(node)
-
-                ( node.name == "FieldDeclaration" || node.name == "MethodDeclaration" ) &&
-                    "static" !in modifiers &&
-                    (inSameHierarchy || "public" in modifiers)
-            })
-        } else {
-            getInterfaceInheritedMethods(typeToInspect)
-        }
-    }
-
     fun resolveAmbiguousName(identifiers: List<String>) : Pair<ReclassifiedNameType, Type?> {
         if (identifiers.size == 1) {
             val identifier = identifiers[0]
@@ -663,6 +602,10 @@ class NameResolutionVisitor(
 
             val declarationLookup = environment.findAll({ (name, node) -> name == identifier && node.name in declarationTypes })
             if (declarationLookup.isNotEmpty()) {
+                if (declarationLookup[0].name == "FieldDeclaration") {
+                    validateUsageOfFieldDeclaration(declarationLookup[0])
+                }
+
                 val declarationType = getDeclarationType(declarationLookup[0])
                 return Pair(ReclassifiedNameType.Expression, declarationType)
             }
@@ -711,19 +654,19 @@ class NameResolutionVisitor(
 
             ReclassifiedNameType.Expression -> {
                 val expressionType = ambiguousPrefixReclassification.second!!
-                val currentClass = environment.find({(_, node) -> node.name == "ClassDeclaration" })
+                val currentClass = getCurrentClassDeclaration()
 
                 if (expressionType.isArray) {
                     throw NameResolutionError("Ambiguous name resolved to an array.")
                 } else {
-                    val typeDeclaration = expressionType.type
-                    // TODO: What happens if typeDeclaration is an interface?
+                    val expressionTypeDeclaration = expressionType.type
 
-                    if (typeDeclaration.name in PRIMITIVE_TYPE_NAMES) {
-                        throw NameResolutionError("Tried to access member of a primitive type \"${typeDeclaration.name}\"")
+                    if (expressionTypeDeclaration.name in PRIMITIVE_TYPE_NAMES) {
+                        throw NameResolutionError("Tried to access member of a primitive type \"${expressionTypeDeclaration.name}\"")
                     }
 
-                    val members = getAccessibleMembers(currentClass, typeDeclaration)
+                    val members = getAccessibleMembers(currentClass, expressionTypeDeclaration)
+                        .filter({ it.name == "FieldDeclaration" && "static" !in getModifiers(it) })
 
                     val memberLookup = members.filter({ getDeclarationName(it) == identifier })
                     if (memberLookup.isNotEmpty()) {
@@ -731,7 +674,7 @@ class NameResolutionVisitor(
                         return Pair(ReclassifiedNameType.Expression, getDeclarationType(member))
                     }
 
-                    val expressionTypeName = getDeclarationName(typeDeclaration)
+                    val expressionTypeName = getDeclarationName(expressionTypeDeclaration)
                     throw NameResolutionError("Prefix \"$ambiguousPrefix\" is ExpressionName which refers to type \"$expressionTypeName\", but failed to find instance method or field \"$identifier\" said type.")
                 }
             }
@@ -883,7 +826,7 @@ class NameResolutionVisitor(
                 val methodHeader1 = methodDeclaration1.getChild("MethodHeader")
                 val methodHeader2 = methodDeclaration2.getChild("MethodHeader")
 
-                if (canMethodHeadersReplaceOneAnother(methodHeader1, methodHeader2)) {
+                if (canMethodsReplaceOneAnother(methodHeader1, methodHeader2)) {
                     throw DuplicateMethodsDetectedInClass(className, getDeclarationName(methodDeclaration1))
                 }
             })
@@ -911,7 +854,7 @@ class NameResolutionVisitor(
          * TEST:
          *
          * No two methods (abstract or otherwise) associated with this class can have the same signature, but
-         * a different type.
+         * a different return type.
          */
         val allMethodDeclarations = getClassInheritedDescendants(node, { it.name == "MethodDeclaration" })
         val allInterfaceMethodDeclarations = allImplementedInterfaces.flatMap({ getInterfaceInheritedMethods(it, className, mutableSetOf()) })
@@ -941,9 +884,13 @@ class NameResolutionVisitor(
          * A class that contains any abstract methods must be abstract.
          */
 
+        if (getDeclarationName(getCurrentClassDeclaration()) == "Main") {
+            println()
+        }
+
         fun areInterfaceMethodsImplemented(classDeclaration: CSTNode, descendantConcreteMethods: List<CSTNode>, descendantUnimplementedInterfaceMethods: List<CSTNode>): Boolean {
             val implementedInterfaces = classDeclaration.getChild("InterfacesOpt").getDescendants("Name").map({ it.getDeclaration() })
-            val allInterfaceInheritedMethods = implementedInterfaces.flatMap({ getInterfaceInheritedMethods(it, getDeclarationName(classDeclaration), mutableSetOf()) })
+            val allInterfaceInheritedMethods = implementedInterfaces.flatMap({ getInterfaceInheritedMethods(it, getDeclarationName(classDeclaration), mutableSetOf()).toSet() })
             val potentiallyUnimplementedInterfaceMethods = allInterfaceInheritedMethods + descendantUnimplementedInterfaceMethods
 
             val abstractMethods = classDeclaration.getDescendants("MethodDeclaration").filter({ "abstract" in getModifiers(it) })
@@ -952,15 +899,15 @@ class NameResolutionVisitor(
 
             val abstractMethodsThatArentConcretelyImplemented = abstractMethods.filter({ abstractMethod ->
                 concreteMethods.filter({ concreteMethod ->
-                    canMethodHeadersReplaceOneAnother(abstractMethod.getChild("MethodHeader"), concreteMethod.getChild("MethodHeader"))
+                    canMethodsReplaceOneAnother(abstractMethod.getChild("MethodHeader"), concreteMethod.getChild("MethodHeader"))
                 }).isEmpty()
             })
 
-            val concreteMethodsNotUsedToImplementAbstractMethods = concreteMethods.filter({ concreteMethod ->
-                abstractMethods.filter({ abstractMethod ->
-                    canMethodHeadersReplaceOneAnother(abstractMethod.getChild("MethodHeader"), concreteMethod.getChild("MethodHeader"))
-                }).isEmpty()
-            })
+//            val concreteMethodsNotUsedToImplementAbstractMethods = concreteMethods.filter({ concreteMethod ->
+//                abstractMethods.filter({ abstractMethod ->
+//                    canMethodsReplaceOneAnother(abstractMethod.getChild("MethodHeader"), concreteMethod.getChild("MethodHeader"))
+//                }).isEmpty()
+//            })
 
             if (abstractMethodsThatArentConcretelyImplemented.isNotEmpty()) {
                 return false
@@ -973,15 +920,15 @@ class NameResolutionVisitor(
 
             val unshadowedPotentiallyUnimplementedInterfaceMethods = potentiallyUnimplementedInterfaceMethods.filter({ unimplementedInterfaceMethod ->
                 abstractMethods.filter({ abstractMethod ->
-                    canMethodHeadersReplaceOneAnother(abstractMethod.getChild("MethodHeader"), unimplementedInterfaceMethod.getChild("MethodHeader"))
+                    canMethodsReplaceOneAnother(abstractMethod.getChild("MethodHeader"), unimplementedInterfaceMethod.getChild("MethodHeader"))
                 }).isEmpty()
             })
 
             // Apply concrete methods to unshadowed unimplemented methods
 
             val remainingUnimplementedAbstractInterfaceMethods = unshadowedPotentiallyUnimplementedInterfaceMethods.filter({ unimplementedInterfaceMethod ->
-                concreteMethodsNotUsedToImplementAbstractMethods.filter({ concreteMethod ->
-                    if (canMethodHeadersReplaceOneAnother(concreteMethod.getChild("MethodHeader"), unimplementedInterfaceMethod.getChild("MethodHeader"))) {
+                concreteMethods.filter({ concreteMethod ->
+                    if (canMethodsReplaceOneAnother(concreteMethod.getChild("MethodHeader"), unimplementedInterfaceMethod.getChild("MethodHeader"))) {
                         if ("protected" in getModifiers(concreteMethod) && "public" in getModifiers(unimplementedInterfaceMethod)) {
                             throw ConcreteMethodImplementsPublicMethodWithProtectedVisibility(className, getDeclarationName(concreteMethod))
                         }
@@ -1006,22 +953,35 @@ class NameResolutionVisitor(
 
                 val finalUnimplementedAbstractInterfaceMethods = remainingUnimplementedAbstractInterfaceMethods.filter({ unimplementedInterfaceMethod ->
                     baseSuperClassConcreteMethods.filter({ concreteMethod ->
-                        canMethodHeadersReplaceOneAnother(concreteMethod.getChild("MethodHeader"), unimplementedInterfaceMethod.getChild("MethodHeader"))
+                        canMethodsReplaceOneAnother(concreteMethod.getChild("MethodHeader"), unimplementedInterfaceMethod.getChild("MethodHeader"))
                     }).isEmpty()
                 })
 
-                return finalUnimplementedAbstractInterfaceMethods.isEmpty()
+                val result = finalUnimplementedAbstractInterfaceMethods.isEmpty()
+
+                if (result == false) {
+                    println()
+                }
+
+                return result
             } else {
-                val remainingConcreteMethods = concreteMethods.filter({ concreteMethod ->
-                    unshadowedPotentiallyUnimplementedInterfaceMethods.filter({ unimplementedInterfaceMethod ->
-                        canMethodHeadersReplaceOneAnother(concreteMethod.getChild("MethodHeader"), unimplementedInterfaceMethod.getChild("MethodHeader"))
-                    }).isEmpty()
-                })
+//                val remainingConcreteMethods = concreteMethods.filter({ concreteMethod ->
+//                    unshadowedPotentiallyUnimplementedInterfaceMethods.filter({ unimplementedInterfaceMethod ->
+//                        canMethodsReplaceOneAnother(concreteMethod.getChild("MethodHeader"), unimplementedInterfaceMethod.getChild("MethodHeader"))
+//                    }).isEmpty()
+//                })
 
                 val superClassDeclaration = superNames[0].getDeclaration()
-                return areInterfaceMethodsImplemented(superClassDeclaration, remainingConcreteMethods, remainingUnimplementedAbstractInterfaceMethods)
+                val result = areInterfaceMethodsImplemented(superClassDeclaration, concreteMethods, remainingUnimplementedAbstractInterfaceMethods)
+
+                if (result == false) {
+                    println()
+                }
+
+                return result
             }
         }
+
 
         if (!areInterfaceMethodsImplemented(node, listOf(), listOf())) {
             if ("abstract" !in getModifiers(node)) {
@@ -1050,7 +1010,7 @@ class NameResolutionVisitor(
                 allFilteredInheritedMethodDeclarations.forEach({ filteredInheritedMethodDeclaration ->
                     val filteredInheritedMethodHeader = filteredInheritedMethodDeclaration.getChild("MethodHeader")
 
-                    if (canMethodHeadersReplaceOneAnother(ownFilteredMethodHeader, filteredInheritedMethodHeader)) {
+                    if (canMethodsReplaceOneAnother(ownFilteredMethodHeader, filteredInheritedMethodHeader)) {
                         throw IllegalMethodReplacement(className, ownFilteredMethodName)
                     }
                 })
@@ -1095,7 +1055,6 @@ class NameResolutionVisitor(
          *
          */
 
-
         val allFieldDeclarations = getClassInheritedDescendants(node, { it.name == "FieldDeclaration" })
 
         /**
@@ -1107,9 +1066,10 @@ class NameResolutionVisitor(
             ownFieldDeclarations.filter({ it === otherFieldDeclaration }).isNotEmpty()
         }
 
-        val resolveAndInsertFieldDeclarationIntoEnvironment = { fieldDeclaration: CSTNode ->
+        val addFieldDeclarationToEnvironment = { fieldDeclaration: CSTNode ->
             if (isOwnFieldDeclaration(fieldDeclaration)) {
-                this.visit(fieldDeclaration)
+                this.visit(fieldDeclaration.getChild("Modifiers"))
+                this.visit(fieldDeclaration.getChild("Type"))
             }
 
             val fieldDeclarationName = getDeclarationName(fieldDeclaration)
@@ -1122,61 +1082,63 @@ class NameResolutionVisitor(
             environment.push(fieldDeclarationName, fieldDeclaration)
         }
 
-        /**
-         * Static fields.
-         */
-        val allStaticFieldDeclarations = allFieldDeclarations.filter({ "static" in getModifiers(it) })
-        allStaticFieldDeclarations.forEach(resolveAndInsertFieldDeclarationIntoEnvironment)
+        val resolveFieldDeclarationRvalues = { fieldDeclaration: CSTNode ->
+            if (isOwnFieldDeclaration(fieldDeclaration)) {
+                this.visit(fieldDeclaration)
+            }
+        }
 
-        /**
-         * Static method names.
-         */
-        val addMethodToEnvironment = { methodDeclaration: CSTNode ->
+        val isOwnMethodDeclaration = { otherDeclaration: CSTNode ->
+            ownMethodDeclarations.filter({ it === otherDeclaration }).isNotEmpty()
+        }
+
+
+        val addMethodDeclarationToEnvironment = { methodDeclaration: CSTNode ->
             val methodName = getDeclarationName(methodDeclaration)
             environment.push(methodName, methodDeclaration)
         }
 
-        val allStaticMethodDeclarations = allMethodDeclarations.filter({ "static" in getModifiers(it) })
-        allStaticMethodDeclarations.forEach(addMethodToEnvironment)
+        val resolveMethodDeclarationBody = fun (methodDeclaration: CSTNode) {
+            if (!(isOwnMethodDeclaration(methodDeclaration) || methodDeclaration.name == "ConstructorDeclaration")) {
+                return
+            }
 
-        /**
-         * Static methods.
-         */
-        val resolveMethodBody = fun (methodDeclaration: CSTNode) {
             environment.pushScope()
+            if (methodDeclaration.name == "MethodDeclaration") {
+                val methodName = getDeclarationName(methodDeclaration)
+                environment.push(methodName, methodDeclaration)
+            }
             this.visit(methodDeclaration)
             environment.popScope()
         }
 
-        val ownStaticMethodDeclarations = allStaticMethodDeclarations.filter({ otherDeclaration ->
-            ownMethodDeclarations.filter({ it === otherDeclaration }).isNotEmpty()
-        })
-        ownStaticMethodDeclarations.forEach(resolveMethodBody)
+        /**
+         * Add Fields Names to Env
+         */
+        allFieldDeclarations.forEach(addFieldDeclarationToEnvironment)
 
         /**
-         * Instance fields.
+         * Add Method Names to Env
          */
-        val allInstanceFieldDeclarations = allFieldDeclarations.filter({ "static" !in getModifiers(it) })
-        allInstanceFieldDeclarations.forEach(resolveAndInsertFieldDeclarationIntoEnvironment)
+        if ("abstract" in getModifiers(node)) {
+            getAllMethodsOfAllInterfacesImplementedInClassHierarchyOf(node).reversed().forEach(addMethodDeclarationToEnvironment)
+        }
+        allMethodDeclarations.forEach(addMethodDeclarationToEnvironment)
 
         /**
-         * Instance method names.
+         * Resolve Field bodies
          */
-        val allInstanceMethodDeclarations = allMethodDeclarations.filter({ "static" !in getModifiers(it) })
-        allInstanceMethodDeclarations.forEach(addMethodToEnvironment)
+        allFieldDeclarations.forEach(resolveFieldDeclarationRvalues)
 
         /**
-         * Instance methods.
+         * Resolve Method bodies.
          */
-        val ownInstanceMethodDeclarations = allInstanceMethodDeclarations.filter({ otherDeclaration ->
-            ownMethodDeclarations.filter({ it === otherDeclaration }).isNotEmpty()
-        })
-        ownInstanceMethodDeclarations.forEach(resolveMethodBody)
+        allMethodDeclarations.forEach(resolveMethodDeclarationBody)
 
         /**
-         * Constructors
+         * Resolve constructors' bodies
          */
-        constructorDeclarations.forEach(resolveMethodBody)
+        constructorDeclarations.forEach(resolveMethodDeclarationBody)
     }
 
     override fun visitInterfaceDeclaration(node: CSTNode) {
@@ -1262,7 +1224,7 @@ class NameResolutionVisitor(
                 val abstractMethodHeader = abstractMethodDeclaration.getChild("MethodHeader")
                 val otherAbstractMethodHeader = otherAbstractMethodDeclaration.getChild("MethodHeader")
 
-                if (canMethodHeadersReplaceOneAnother(abstractMethodHeader, otherAbstractMethodHeader)) {
+                if (canMethodsReplaceOneAnother(abstractMethodHeader, otherAbstractMethodHeader)) {
                     val abstractMethodDeclarationName = getDeclarationName(abstractMethodDeclaration)
                     throw DuplicateMethodsDetectedInInterface(interfaceName, abstractMethodDeclarationName)
                 }
@@ -1303,7 +1265,7 @@ class NameResolutionVisitor(
             })
             abstractMethodDeclarations.forEach({interfaceMethod ->
                 inheritedAndFinalMethodDeclarations.forEach(fun (inheritedInterfaceMethod: CSTNode) {
-                    if (canMethodHeadersReplaceOneAnother(interfaceMethod.getChild("MethodHeader"), inheritedInterfaceMethod.getChild("MethodHeader"))) {
+                    if (canMethodsReplaceOneAnother(interfaceMethod.getChild("MethodHeader"), inheritedInterfaceMethod.getChild("MethodHeader"))) {
                         throw IllegalMethodReplacement(interfaceName, getDeclarationName(interfaceMethod))
                     }
                 })
@@ -1324,6 +1286,18 @@ class NameResolutionVisitor(
          * A protected method must not replace a public method
          */
         ownMethodsMustNotReplaceInheritedMethods({ "public" in getModifiers(it)}, { "protected" in getModifiers(it) })
+    }
+
+    private fun getCurrentClassDeclaration(): CSTNode {
+        return environment.find({(_, node) -> node.name == "ClassDeclaration" })
+    }
+
+    private fun getCurrentMethodDeclaration(): CSTNode? {
+        return currentMethodDeclaration
+    }
+
+    private fun getCurrentFieldDeclaration(): CSTNode? {
+        return currentFieldDeclaration
     }
 
     /**
@@ -1368,19 +1342,19 @@ class NameResolutionVisitor(
      * As a Type In a field declaration (§8.3, §9.3)
      */
     override fun visitFieldDeclaration(node: CSTNode) {
-        /**
-         * Resolve the type in this declaration
-         */
-        val typeNode = node.getChild("Type")
-
-        try {
-            val nameNode = typeNode.getDescendant("Name")
-            resolveTypeName(nameNode)
-        } catch (ex: FoundNoDescendant) {
-            // Do nothing
-        }
-
+        currentFieldDeclaration = node
         super.visitFieldDeclaration(node)
+
+        // Type checking for field declaration.
+        if (node.children[2].name == "VariableDeclarator") {
+            val variableDeclarator = node.getChild("VariableDeclarator")
+            val fieldType = getDeclarationType(node)
+            val expressionType = variableDeclarator.getDescendant("Expression").getType()
+            if (!colonEquals(fieldType, expressionType)) {
+                throw TypeCheckingError("FieldDeclaration initializer is not type assignable to the field type.")
+            }
+        }
+        currentFieldDeclaration = null
     }
 
     override fun visitBlock(node: CSTNode) {
@@ -1389,22 +1363,11 @@ class NameResolutionVisitor(
         environment.popScope()
     }
 
-    /**
-     * TypeName:
-     * As the result type of a method (§8.4, §9.4)
-     */
-    override fun visitMethodHeader(node: CSTNode) {
-        try {
-            val typeNode = node.getChild("Type")
-            val nameNode = typeNode.getDescendant("Name")
-            resolveTypeName(nameNode)
-        } catch (ex: FoundNoChild) {
-            // Do nothing
-        } catch (ex: FoundNoDescendant) {
-            // Do nothing
-        }
 
-        super.visitMethodHeader(node)
+    override fun visitMethodDeclaration(node: CSTNode) {
+        currentMethodDeclaration = node
+        super.visitMethodDeclaration(node)
+        currentMethodDeclaration = null
     }
 
     /**
@@ -1413,14 +1376,6 @@ class NameResolutionVisitor(
      * (§8.4.1, §8.8.1, §9.4)
      */
     override fun visitFormalParameter(node: CSTNode) {
-        val typeNode = node.getChild("Type")
-        try {
-            val nameNode = typeNode.getDescendant("Name")
-            resolveTypeName(nameNode)
-        } catch (ex: FoundNoDescendant) {
-            // Do nothing
-        }
-
         super.visitFormalParameter(node)
 
         val name = node.getChild("IDENTIFIER").lexeme
@@ -1436,14 +1391,6 @@ class NameResolutionVisitor(
      * As the type of a local variable (§14.4)
      */
     override fun visitLocalVariableDeclaration(node: CSTNode) {
-        val typeNode = node.getChild("Type")
-
-        try {
-            val nameNode = typeNode.getDescendant("Name")
-            resolveTypeName(nameNode)
-        } catch (ex: FoundNoDescendant) {
-        }
-
         super.visitLocalVariableDeclaration(node)
 
         val variableDeclaratorNode = node.getChild("VariableDeclarator")
@@ -1454,6 +1401,13 @@ class NameResolutionVisitor(
         }
 
         environment.push(variableName, node)
+
+        // Do type checking on the local variable declaration.
+        val localVariableType = getDeclarationType(node)
+        val expressionType = variableDeclaratorNode.getDescendant("Expression").getType()
+        if (!colonEquals(localVariableType, expressionType)) {
+            throw TypeCheckingError("LocalVariableDeclaration initializer is not type assignable to the variable type.")
+        }
     }
 
     /**
@@ -1467,6 +1421,25 @@ class NameResolutionVisitor(
         resolveTypeName(nameNode)
 
         super.visitClassInstanceCreationExpression(node)
+
+        val classDeclaration = nameNode.getDeclaration()
+        if ("abstract" in getModifiers(classDeclaration)) {
+            throw TypeCheckingError("Cannot instantiate an abstract class.")
+        }
+
+        val actualParameterTypes = getActualParameterTypes(node.getChild("ArgumentListOpt"))
+
+        val listOfConstructorFormalParameterTypes = classDeclaration.getDescendants("ConstructorDeclarator")
+            .map({ it.getChild("FormalParameterListOpt") })
+            .map({ getFormalParameterTypes(it) })
+
+        val name = nameNode.getDescendants("IDENTIFIER").map({ it.lexeme }).joinToString(".")
+
+        if (!listOfConstructorFormalParameterTypes.contains(actualParameterTypes)) {
+            throw TypeCheckingError("No constructor matches the argument types of ClassInstanceCreationExpression for \"$name\"")
+        }
+
+        node.setType(nameNode.getType())
     }
 
     /**
@@ -1474,14 +1447,26 @@ class NameResolutionVisitor(
      * As the element type of an array to be created in an array creation expression (§15.10)
      */
     override fun visitArrayCreationExpression(node: CSTNode) {
-        try {
+        if (node.children[1].name == "ClassOrInterfaceType") {
             val classOrInterfaceTypeNode = node.getChild("ClassOrInterfaceType")
             val nameNode = classOrInterfaceTypeNode.getChild("Name")
             resolveTypeName(nameNode)
-        } catch (ex: FoundNoChild) {
+
+            super.visitArrayCreationExpression(node)
+
+            node.setType(Type(nameNode.getType().type, true))
+        } else {
+            super.visitArrayCreationExpression(node)
+            val primitiveType = node.getChild("PrimitiveType").children[0]
+            node.setType(Type(primitiveType, true))
         }
 
-        super.visitArrayCreationExpression(node)
+        val dimExpr = node.getChild("DimExpr")
+        val expression = dimExpr.getChild("Expression")
+
+        if (!expression.getType().isNumeric()) {
+            throw TypeCheckingError("Tried to create an array using an expression that doesn't resolve to a number.")
+        }
     }
 
     /**
@@ -1489,17 +1474,73 @@ class NameResolutionVisitor(
      * As the type mentioned in the cast operator of a cast expression (§15.16)
      */
     override fun visitCastExpression(node: CSTNode) {
-        val nameNode = when (node.children[1].name) {
-            "Name" -> node.children[1]
-            "Expression" -> node.children[1].getDescendant("Name")
-            else -> null
+        when (node.children[1].name) {
+            "Name" -> {
+                val nameNode = node.getChild("Name")
+                resolveTypeName(nameNode)
+                this.visit(node.getChild("UnaryExpressionNotPlusMinus"))
+            }
+
+            "Expression" -> {
+                val expressionNode = node.getChild("Expression")
+                val nameNode = expressionNode.getDescendant("Name")
+                resolveTypeName(nameNode)
+
+                expressionNode.setType(nameNode.getType())
+
+                this.visit(node.getChild("UnaryExpressionNotPlusMinus"))
+            }
+            else -> {
+                super.visitCastExpression(node)
+            }
         }
 
-        if (nameNode != null) {
-            resolveTypeName(nameNode)
-            this.visit(node.getChild("UnaryExpressionNotPlusMinus"))
-        } else {
-            super.visitCastExpression(node)
+        when (node.children[1].name) {
+            "Expression" -> {
+                // Cast to some reference type since the weeder ensures that Expression contains Name.
+                val typeOfExpression = node.getChild("Expression").getType()
+                val typeOfUnaryExpressionNotPlusMinus = node.getChild("UnaryExpressionNotPlusMinus").getType()
+
+                if (colonEquals(typeOfExpression, typeOfUnaryExpressionNotPlusMinus)) {
+                    node.setType(typeOfExpression)
+                } else if (colonEquals(typeOfUnaryExpressionNotPlusMinus, typeOfExpression)) {
+                    node.setType(typeOfExpression)
+                    node.markDowncast()
+                } else {
+                    throw TypeCheckingError("Tried to cast non-related types")
+                }
+            }
+            "Name" -> {
+                // Cast to an array of some reference type.
+                val typeOfCast = Type(node.getChild("Name").getType().type, true)
+                val typeOfUnaryExpressionNotPlusMinus = node.getChild("UnaryExpressionNotPlusMinus").getType()
+
+                if (colonEquals(typeOfCast, typeOfUnaryExpressionNotPlusMinus)) {
+                    node.setType(typeOfCast)
+                } else if (colonEquals(typeOfUnaryExpressionNotPlusMinus, typeOfCast)) {
+                    node.setType(typeOfCast)
+                    node.markDowncast()
+                } else {
+                    throw TypeCheckingError("Tried to cast non-related type arrays")
+                }
+            }
+            "PrimitiveType" -> {
+                // Cast to an array or non-array of some primitive type.
+                val typeOfCast = Type(node.getChild("PrimitiveType").children[0], node.getChild("DimOpt").children.size == 1)
+                val typeOfUnaryExpression = node.getChild("UnaryExpression").getType()
+
+                if (typeOfCast.isNumeric() && typeOfUnaryExpression.isNumeric()) {
+                    node.setType(typeOfCast)
+                } else if (colonEquals(typeOfCast, typeOfUnaryExpression)) {
+                    node.setType(typeOfCast)
+                } else if (colonEquals(typeOfUnaryExpression, typeOfCast)) {
+                    node.setType(typeOfCast)
+                    node.markDowncast()
+                } else {
+                    throw TypeCheckingError("Tried to cast non-related type arrays")
+                }
+
+            }
         }
     }
 
@@ -1508,14 +1549,60 @@ class NameResolutionVisitor(
      * As the type that follows the instanceof relational operator (§15.20.2)
      */
     override fun visitRelationalExpression(node: CSTNode) {
-        try {
-            val referenceTypeNode = node.getChild("ReferenceType")
-            val nameNode = referenceTypeNode.getDescendant("Name")
-            resolveTypeName(nameNode)
-        } catch (ex: FoundNoChild) {
+        if (node.children.size > 1 && node.children[2].name == "ReferenceType") {
+            val referenceType = node.getChild("ReferenceType")
+
+            if (referenceType.children[0].name == "ArrayType") {
+                val arrayType = referenceType.getChild("ArrayType")
+                if (arrayType.children[0].name == "PrimitiveType") {
+                    val primitiveType = arrayType.getChild("PrimitiveType")
+                    referenceType.setType(Type(primitiveType.children[0], true))
+                } else {
+                    // Name
+                    val nameNode = arrayType.getDescendant("Name")
+                    resolveTypeName(nameNode)
+                    referenceType.setType(Type(nameNode.getType().type, true))
+                }
+            } else {
+                // ClassOrInterfaceType
+                val nameNode = referenceType.getDescendant("Name")
+                resolveTypeName(nameNode)
+                referenceType.setType(nameNode.getType())
+            }
         }
 
         super.visitRelationalExpression(node)
+
+        if (node.children[0].name == "AdditiveExpression") {
+            node.setType(node.getChild("AdditiveExpression").getType())
+        } else if (node.children[1].name in listOf("<", ">", "<=", ">=")) {
+            val operator = node.children[1].name
+            val typeOfRelationalExpression = node.getChild("RelationalExpression").getType()
+            val typeOfAdditiveExpression = node.getChild("AdditiveExpression").getType()
+
+            if (!colonEquals(typeOfRelationalExpression, typeOfAdditiveExpression) && !colonEquals(typeOfAdditiveExpression, typeOfRelationalExpression)) {
+                throw TypeCheckingError("Tried to compare non-type assignable expressions using operator \"$operator\"")
+            }
+
+            node.setType(Type(CSTNode("boolean"), false))
+        } else {
+            val typeOfRelationalExpression = node.getChild("RelationalExpression").getType()
+            val typeOfReferenceType = node.getChild("ReferenceType").getType()
+
+            if (!(typeOfRelationalExpression.isReference() || typeOfRelationalExpression.isNull())) {
+                throw TypeCheckingError("RelationalExpression operand of \"instanceof\" operator was neither a reference type nor null.")
+            }
+
+            if (!typeOfReferenceType.isReference()) {
+                throw TypeCheckingError("ReferenceType operand of \"instanceof\" operator was not a reference type")
+            }
+
+            if (!colonEquals(typeOfRelationalExpression, typeOfReferenceType) && !colonEquals(typeOfReferenceType, typeOfRelationalExpression)) {
+                throw TypeCheckingError("Operands of \"instanceof\" operator are not type-assignable to each other")
+            }
+
+            node.setType(Type(CSTNode("boolean"), false))
+        }
     }
 
     /**
@@ -1523,12 +1610,44 @@ class NameResolutionVisitor(
      * As the array reference expression in an array access expression (§15.13)
      */
     override fun visitArrayAccess(node: CSTNode) {
-        try {
-            val nameNode = node.getChild("Name")
-            resolveExpressionName(nameNode)
-        } catch (ex: FoundNoChild) {
+        val arrayAccessType =
+            if (node.children[0].name == "Name") {
+                val nameNode = node.getChild("Name")
+                resolveExpressionName(nameNode)
+
+                super.visitArrayAccess(node)
+
+                val qualifiedIdentifier = getQualifiedIdentifierFromName(nameNode)
+                val nameDeclaration = nameNode.getDeclaration()
+                val nameType = getDeclarationType(nameDeclaration)
+
+                if (!nameType.isArray) {
+                    throw TypeCheckingError("Tried to access a name \"$qualifiedIdentifier\" that is not an array")
+                }
+
+                Type(nameType.type, false)
+            } else {
+                // First child is PrimaryNoNewArray
+                super.visitArrayAccess(node)
+
+                val primaryNoNewArray = node.getChild("PrimaryNoNewArray")
+                val primaryNoNewArrayType = primaryNoNewArray.getType()
+
+                if (!primaryNoNewArrayType.isArray) {
+                    throw TypeCheckingError("Tried to access a PrimaryNoNewArray that is not an array")
+                }
+
+                Type(primaryNoNewArrayType.type, false)
+            }
+
+        val expression = node.getChild("Expression")
+        val expressionType = expression.getType()
+
+        if (!expressionType.isNumeric()) {
+            throw TypeCheckingError("Tried to access non-number index of an array")
         }
-        super.visitArrayAccess(node)
+
+        node.setType(arrayAccessType)
     }
 
     /**
@@ -1544,6 +1663,29 @@ class NameResolutionVisitor(
         } catch (ex: FoundNoChild) {
         }
         super.visitUnaryExpressionNotPlusMinus(node)
+
+        when (node.children[0].name) {
+            "!" -> {
+                val unaryExressionType = node.getChild("UnaryExpression").getType()
+                if (unaryExressionType.type.name != "boolean") {
+                    throw TypeCheckingError("Tried to call the \"!\" operator on a non-boolean.")
+                }
+                node.setType(unaryExressionType)
+            }
+            "CastExpression" -> {
+                node.setType(node.getChild("CastExpression").getType())
+            }
+            "Primary" -> {
+                node.setType(node.getChild("Primary").getType())
+            }
+            "Name" -> {
+                node.setType(node.getChild("Name").getType())
+            }
+        }
+    }
+
+    fun getCurrentLeftHandSide(): CSTNode? {
+        return currentLeftHandSide
     }
 
     /**
@@ -1551,6 +1693,7 @@ class NameResolutionVisitor(
      * As the left-hand operand of an assignment operator (§15.26)
      */
     override fun visitLeftHandSide(node: CSTNode) {
+        currentLeftHandSide = node
         try {
             val nameNode = node.getChild("Name")
             resolveExpressionName(nameNode)
@@ -1558,6 +1701,38 @@ class NameResolutionVisitor(
         }
 
         super.visitLeftHandSide(node)
+        node.setType(node.children[0].getType())
+        currentLeftHandSide = null
+    }
+
+    fun validateUsageOfMethodInvocation(methodDeclarationNode: CSTNode) {
+        if (getCurrentMethodDeclaration() != null) {
+            val currentMethodDeclaration = getCurrentMethodDeclaration()!!
+
+            val isCurrentMethodDeclarationStatic = "static" in getModifiers(currentMethodDeclaration)
+            val isMethodBeingUsedStatic = "static" in getModifiers(methodDeclarationNode)
+
+            if (isCurrentMethodDeclarationStatic && !isMethodBeingUsedStatic) {
+                val currentMethodName = getDeclarationName(currentMethodDeclaration)
+                val methodBeingUsedName = getDeclarationName(methodDeclarationNode)
+
+                throw NameResolutionError("Tried to use instance method \"$methodBeingUsedName\" within static method \"$currentMethodName\"")
+            }
+        }
+
+        if (getCurrentFieldDeclaration() != null) {
+            val currentFieldDeclaration = getCurrentFieldDeclaration()!!
+
+            val isCurrentFieldDeclarationStatic = "static" in getModifiers(currentFieldDeclaration)
+            val isMethodBeingUsedStatic = "static" in getModifiers(methodDeclarationNode)
+
+            if (isCurrentFieldDeclarationStatic && !isMethodBeingUsedStatic) {
+                val currentFieldDeclarationName = getDeclarationName(currentFieldDeclaration)
+                val methodBeingUsedName = getDeclarationName(methodDeclarationNode)
+
+                throw NameResolutionError("Tried to use instance method \"$methodBeingUsedName\" in initialization of static field \"$currentFieldDeclarationName\"")
+            }
+        }
     }
 
     /**
@@ -1565,12 +1740,133 @@ class NameResolutionVisitor(
      * Before the “(” in a method invocation expression (§15.12)
      */
     override fun visitMethodInvocation(node: CSTNode) {
-        try {
-            val nameNode = node.getChild("Name")
-            resolveMethodName(nameNode)
-        } catch (ex: FoundNoChild) {
-        }
         super.visitMethodInvocation(node)
+        val actualParameterTypes = getActualParameterTypes(node.getChild("ArgumentListOpt"))
+
+        if (node.children[0].name == "Name") {
+            val nameNode = node.getChild("Name")
+            val name = nameNode.getDescendants("IDENTIFIER").map({ it.lexeme })
+
+            if (name.size == 1) {
+                val methodName = name[0]
+                val currentClassDeclaration = getCurrentClassDeclaration()
+                val isCurrentClassAbstract = "abstract" in getModifiers(currentClassDeclaration)
+
+                val methodDeclarationNode = environment.find({(identifier, methodDeclaration) ->
+                    if (identifier != methodName || !(methodDeclaration.name == "MethodDeclaration" || methodDeclaration.name == "AbstractMethodDeclaration" && isCurrentClassAbstract)) {
+                        false
+                    } else {
+                        val methodHeader = methodDeclaration.getChild("MethodHeader")
+                        val methodDeclarator = methodHeader.getChild("MethodDeclarator")
+                        val formalParameterListOpt = methodDeclarator.getChild("FormalParameterListOpt")
+                        getFormalParameterTypes(formalParameterListOpt) == actualParameterTypes
+                    }
+                })
+
+                validateUsageOfMethodInvocation(methodDeclarationNode)
+
+                addNameResolution(nameNode, methodDeclarationNode)
+                node.setType(getDeclarationType(methodDeclarationNode))
+            } else {
+                val methodName = name.last()
+                val ambiguousPrefix = name.subList(0, name.size - 1)
+                val ambiguousPrefixResolution = resolveAmbiguousName(ambiguousPrefix)
+
+                when (ambiguousPrefixResolution.first) {
+                    ReclassifiedNameType.Package -> {
+                        val packageName = ambiguousPrefix.joinToString(".")
+                        throw NameResolutionError("Tried to call method \"$methodName\" on package \"$packageName\"")
+                    }
+
+                    ReclassifiedNameType.Type -> {
+                        val resolvedType = ambiguousPrefixResolution.second!!
+                        val typeDeclaration = resolvedType.type
+                        val currentClass = getCurrentClassDeclaration()
+
+                        if (typeDeclaration.name != "ClassDeclaration") {
+                            throw TypeCheckingError("Tried to call static method \"$methodName\" on a non-class ${typeDeclaration.name}")
+                        }
+
+                        val accessibleStaticMethods = getAccessibleMembers(currentClass, typeDeclaration)
+                            .filter({ it.name in listOf("MethodDeclaration") && "static" in getModifiers(it)})
+                        val resolvedStaticMethod = accessibleStaticMethods.find({ methodDeclaration ->
+                            if (getDeclarationName(methodDeclaration) != methodName) {
+                                false
+                            } else {
+                                val methodHeader = methodDeclaration.getChild("MethodHeader")
+                                val methodDeclarator = methodHeader.getChild("MethodDeclarator")
+                                val formalParameterListOpt = methodDeclarator.getChild("FormalParameterListOpt")
+                                getFormalParameterTypes(formalParameterListOpt) == actualParameterTypes
+                            }
+                        })
+
+                        if (resolvedStaticMethod == null) {
+                            throw TypeCheckingError("Tried to invoke static method \"${getDeclarationName(typeDeclaration)}.$methodName\" from class ${getDeclarationName(currentClass)}, but none found.")
+                        }
+
+                        addNameResolution(nameNode, resolvedStaticMethod)
+                        node.setType(getDeclarationType(resolvedStaticMethod))
+                    }
+
+                    ReclassifiedNameType.Expression -> {
+                        val resolvedType = ambiguousPrefixResolution.second!!
+                        val resolvedTypeDeclaration = resolvedType.type
+                        val currentClass = getCurrentClassDeclaration()
+
+                        val accessibleInstanceMethods = getAccessibleMembers(currentClass, resolvedTypeDeclaration)
+                            .filter({ it.name in listOf("MethodDeclaration", "AbstractMethodDeclaration") && "static" !in getModifiers(it)})
+
+                        val resolvedInstanceMethod = accessibleInstanceMethods.find({ methodDeclaration ->
+                            if (getDeclarationName(methodDeclaration) != methodName) {
+                                false
+                            } else {
+                                val methodHeader = methodDeclaration.getChild("MethodHeader")
+                                val methodDeclarator = methodHeader.getChild("MethodDeclarator")
+                                val formalParameterListOpt = methodDeclarator.getChild("FormalParameterListOpt")
+                                getFormalParameterTypes(formalParameterListOpt) == actualParameterTypes
+                            }
+                        })
+
+                        if (resolvedInstanceMethod == null) {
+                            throw TypeCheckingError("Tried to invoke instance method \"${getDeclarationName(resolvedTypeDeclaration)}.$methodName\" from class ${getDeclarationName(currentClass)}, but none found.")
+                        }
+
+                        addNameResolution(nameNode, resolvedInstanceMethod)
+                        node.setType(getDeclarationType(resolvedInstanceMethod))
+                    }
+                }
+            }
+        } else {
+            val typeOfPrimary = node.getChild("Primary").getType()
+            val methodName = node.getChild("IDENTIFIER").lexeme
+            val currentClass = getCurrentClassDeclaration()
+
+            val typeDeclaration = typeOfPrimary.type
+
+            if (typeDeclaration.name != "ClassDeclaration") {
+                throw TypeCheckingError("Tried to call instance method \"$methodName\" on a non-class ${typeDeclaration.name}")
+            }
+
+            val accessibleInstanceMethods = getAccessibleMembers(currentClass, typeDeclaration)
+                .filter({ it.name in listOf("MethodDeclaration", "AbstractMethodDeclarations") && "static" !in getModifiers(it)})
+            val resolvedMethod = accessibleInstanceMethods.find({ methodDeclaration ->
+                if (getDeclarationName(methodDeclaration) != methodName) {
+                    false
+                } else {
+                    val methodHeader = methodDeclaration.getChild("MethodHeader")
+                    val methodDeclarator = methodHeader.getChild("MethodDeclarator")
+                    val formalParameterListOpt = methodDeclarator.getChild("FormalParameterListOpt")
+                    getFormalParameterTypes(formalParameterListOpt) == actualParameterTypes
+                }
+            })
+
+            if (resolvedMethod == null) {
+                throw TypeCheckingError("Tried to invoke instance method \"${getDeclarationName(typeDeclaration)}.$methodName\" from class ${getDeclarationName(currentClass)}, but none found.")
+            }
+
+            addNameResolution(node.getChild("IDENTIFIER"), resolvedMethod)
+            node.setType(getDeclarationType(resolvedMethod))
+        }
     }
 
     /**
@@ -1579,6 +1875,378 @@ class NameResolutionVisitor(
      */
     override fun visitTypeImportOnDemandDeclaration(node: CSTNode) {
         val nameNode = node.getChild("Name")
+    }
+
+    override fun visitType(node: CSTNode) {
+        try {
+            val nameNode = node.getDescendant("Name")
+            resolveTypeName(nameNode)
+        } catch (ex: FoundNoDescendant) {
+
+        }
+    }
+
+    override fun visitLiteral(node: CSTNode) {
+        val typeDeclaration = when(node.children[0].name) {
+            "INTEGER" -> CSTNode("int")
+            "BOOLEAN" -> CSTNode("boolean")
+            "CHARACTER" -> CSTNode("char")
+            "STRING" -> lookupTypeName("String")!!
+            "NULL" -> CSTNode("NULL")
+            else -> {
+                throw TypeCheckingError("Detected illegal type when visiting literal.")
+            }
+        }
+
+        node.setType(Type(typeDeclaration, false))
+    }
+
+    override fun visitPrimaryNoNewArray(node: CSTNode) {
+        super.visitPrimaryNoNewArray(node)
+
+        val childType = when (node.children[0].name) {
+            "this" -> {
+                if (getCurrentMethodDeclaration() != null) {
+                    val currentMethodDeclaration = getCurrentMethodDeclaration()!!
+                    val currentMethodDeclarationName = getDeclarationName(currentMethodDeclaration)
+
+                    if ("static" in getModifiers(currentMethodDeclaration)) {
+                        throw TypeCheckingError("Tried to access \"this\" inside static method $currentMethodDeclarationName")
+                    }
+                }
+
+                if (getCurrentFieldDeclaration() != null) {
+                    val currentFieldDeclaration = getCurrentFieldDeclaration()!!
+                    val currentFieldDeclarationName = getDeclarationName(currentFieldDeclaration)
+
+                    if ("static" in getModifiers(currentFieldDeclaration)) {
+                        throw TypeCheckingError("Tried to access \"this\" inside static field declaration $currentFieldDeclarationName")
+                    }
+
+                }
+
+                Type(getCurrentClassDeclaration(), false)
+            }
+            "(" -> node.getChild("Expression").getType()
+            else -> {
+                node.children[0].getType()
+            }
+        }
+
+        node.setType(childType)
+    }
+
+    override fun visitPrimary(node: CSTNode) {
+        super.visitPrimary(node)
+        node.setType(node.children[0].getType())
+    }
+
+    override fun visitExpression(node: CSTNode) {
+        super.visitExpression(node)
+        node.setType(node.children[0].getType())
+    }
+
+    override fun visitAssignmentExpression(node: CSTNode) {
+        super.visitAssignmentExpression(node)
+        node.setType(node.children[0].getType())
+    }
+
+    override fun visitAssignment(node: CSTNode) {
+        super.visitAssignment(node)
+
+        val leftHandSideType = node.getChild("LeftHandSide").getType()
+        val assignmentExpressionType = node.getChild("AssignmentExpression").getType()
+
+        if (!colonEquals(leftHandSideType, assignmentExpressionType)) {
+            throw TypeCheckingError("In Assignment, operand AssignmentExpression is not type assignable to LeftHandSide.")
+        }
+
+        node.setType(leftHandSideType)
+    }
+
+    override fun visitConditionalOrExpression(node: CSTNode) {
+        super.visitConditionalOrExpression(node)
+
+        if (node.children[0].name == "ConditionalAndExpression") {
+            node.setType(node.getChild("ConditionalAndExpression").getType())
+        } else {
+            val typeOfConditionalOrExpression = node.getChild("ConditionalOrExpression").getType()
+            val typeOfConditionalAndExpression = node.getChild("ConditionalAndExpression").getType()
+
+            if (
+                !(!typeOfConditionalAndExpression.isArray && typeOfConditionalAndExpression.type.name == "boolean") ||
+                !(!typeOfConditionalOrExpression.isArray && typeOfConditionalOrExpression.type.name == "boolean")
+            ) {
+                throw TypeCheckingError("Tried to use \"||\" operator with a non-boolean type")
+            }
+
+            node.setType(Type(CSTNode("boolean"), false))
+        }
+    }
+
+    override fun visitConditionalAndExpression(node: CSTNode) {
+        super.visitConditionalAndExpression(node)
+        if (node.children[0].name == "OrExpression") {
+            node.setType(node.getChild("OrExpression").getType())
+        } else {
+            val typeOfOrExpression = node.getChild("OrExpression").getType()
+            val typeOfConditionalAndExpression = node.getChild("ConditionalAndExpression").getType()
+
+            if (
+                !(!typeOfConditionalAndExpression.isArray && typeOfConditionalAndExpression.type.name == "boolean") ||
+                !(!typeOfOrExpression.isArray && typeOfOrExpression.type.name == "boolean")
+            ) {
+                throw TypeCheckingError("Tried to use \"&&\" operator with a non-boolean type")
+            }
+
+            node.setType(Type(CSTNode("boolean"), false))
+        }
+    }
+
+    override fun visitOrExpression(node: CSTNode) {
+        super.visitOrExpression(node)
+        if (node.children[0].name == "AndExpression") {
+            node.setType(node.getChild("AndExpression").getType())
+        } else {
+            val typeOfOrExpression = node.getChild("OrExpression").getType()
+            val typeOfAndExpression = node.getChild("AndExpression").getType()
+
+            if (
+                !(!typeOfAndExpression.isArray && typeOfAndExpression.type.name == "boolean") ||
+                !(!typeOfOrExpression.isArray && typeOfOrExpression.type.name == "boolean")
+            ) {
+                throw TypeCheckingError("Tried to use eager boolean or operator \"|\" with non-booleans.")
+            }
+
+            node.setType(Type(CSTNode("boolean"), false))
+        }
+    }
+
+    override fun visitAndExpression(node: CSTNode) {
+        super.visitAndExpression(node)
+        if (node.children[0].name == "EqualityExpression") {
+            node.setType(node.getChild("EqualityExpression").getType())
+        } else {
+            val typeOfAndExpression = node.getChild("AndExpression").getType()
+            val typeOfEqualityExpression = node.getChild("EqualityExpression").getType()
+
+            if (
+                !(!typeOfAndExpression.isArray && typeOfAndExpression.type.name == "boolean") ||
+                !(!typeOfEqualityExpression.isArray && typeOfEqualityExpression.type.name == "boolean")
+            ) {
+                throw TypeCheckingError("Tried to use eager boolean or operator \"&\" with non-booleans.")
+            }
+
+            node.setType(Type(CSTNode("boolean"), false))
+        }
+    }
+
+    override fun visitEqualityExpression(node: CSTNode) {
+        super.visitEqualityExpression(node)
+        if (node.children[0].name == "RelationalExpression") {
+            node.setType(node.getChild("RelationalExpression").getType())
+        } else {
+            val typeOfEqualityExpression = node.getChild("EqualityExpression").getType()
+            val typeOfRelationalExpression = node.getChild("RelationalExpression").getType()
+
+            if (!colonEquals(typeOfEqualityExpression, typeOfRelationalExpression) && !colonEquals(typeOfRelationalExpression, typeOfEqualityExpression)) {
+               throw TypeCheckingError("In EqualityExpression \"==\" LHS and RHS are not type assignable to each other.")
+            }
+
+            node.setType(Type(CSTNode("boolean"), false))
+        }
+    }
+
+    override fun visitAdditiveExpression(node: CSTNode) {
+        super.visitAdditiveExpression(node)
+
+        if (node.children[0].name == "MultiplicativeExpression") {
+            node.setType(node.getChild("MultiplicativeExpression").getType())
+        } else if (node.children[1].name == "-") {
+            val typeOfAdditiveExpression = node.getChild("AdditiveExpression").getType()
+            val typeOfMultiplicativeExpression = node.getChild("MultiplicativeExpression").getType()
+
+            if (!typeOfAdditiveExpression.isNumeric() || !typeOfMultiplicativeExpression.isNumeric()) {
+                throw TypeCheckingError("In AdditiveExpression, tried to subtract non-numeric values")
+            }
+
+            node.setType(Type(CSTNode("int"), false))
+        } else {
+            val typeOfAdditiveExpression = node.getChild("AdditiveExpression").getType()
+            val typeOfMultiplicativeExpression = node.getChild("MultiplicativeExpression").getType()
+
+            val stringDeclaration = getClassFromIODEnvironment("String")
+
+            if (typeOfAdditiveExpression.type !== stringDeclaration && typeOfMultiplicativeExpression.type !== stringDeclaration) {
+                if (!typeOfAdditiveExpression.isNumeric() || !typeOfMultiplicativeExpression.isNumeric()) {
+                    throw TypeCheckingError("In AdditiveExpression, tried to add non-numeric values where neither of them are strings")
+                }
+
+                node.setType(Type(CSTNode("int"), false))
+            } else {
+                if (typeOfAdditiveExpression.type === stringDeclaration && typeOfMultiplicativeExpression.type.name == "void" ||
+                    typeOfMultiplicativeExpression.type == stringDeclaration && typeOfAdditiveExpression.type.name == "void") {
+                    throw TypeCheckingError("In AdditiveExpression, tried to add a void type to a String.")
+                }
+                node.setType(Type(stringDeclaration, false))
+            }
+        }
+    }
+
+    override fun visitMultiplicativeExpression(node: CSTNode) {
+        super.visitMultiplicativeExpression(node)
+
+        if (node.children[0].name == "UnaryExpression") {
+            node.setType(node.getChild("UnaryExpression").getType())
+        } else {
+            val operator = node.children[1].name
+            val typeOfMultiplicativeExpression = node.getChild("MultiplicativeExpression").getType()
+            val typeOfUnaryExpression = node.getChild("UnaryExpression").getType()
+
+            if (!(typeOfMultiplicativeExpression.isNumeric() && typeOfUnaryExpression.isNumeric())) {
+                throw TypeCheckingError("In MultiplicativeExpression, tried to use \"$operator\" on non-numeric operands")
+            }
+
+            node.setType(Type(CSTNode("int"), false))
+        }
+    }
+
+    override fun visitUnaryExpression(node: CSTNode) {
+        super.visitUnaryExpression(node)
+
+        if (node.children[0].name == "UnaryExpressionNotPlusMinus") {
+            node.setType(node.getChild("UnaryExpressionNotPlusMinus").getType())
+        } else {
+            // First child is "-"
+            val unaryExpressionType = node.getChild("UnaryExpression").getType()
+            if (!unaryExpressionType.isNumeric()) {
+                throw TypeCheckingError("In UnaryExpression, tried to prefix non-numeric expression with \"-\".")
+            }
+            node.setType(unaryExpressionType)
+        }
+    }
+
+    override fun visitReturnStatement(node: CSTNode) {
+        super.visitReturnStatement(node)
+
+        val currentMethodDeclaration = getCurrentMethodDeclaration()
+        val currentMethodReturnType = getDeclarationType(currentMethodDeclaration!!)
+
+        val expressionOpt = node.getChild("ExpressionOpt")
+
+        if (currentMethodReturnType.type.name == "void") {
+            if (expressionOpt.children.size != 0) {
+                throw TypeCheckingError("Tried to return from a void method.")
+            }
+        } else {
+            if (expressionOpt.children.size == 0) {
+                throw TypeCheckingError("Tried to return void from a non-void method.")
+            }
+            val returnExpressionType = expressionOpt.getChild("Expression").getType()
+            if (!colonEquals(currentMethodReturnType, returnExpressionType)) {
+                throw TypeCheckingError("Return type of expression is not type assignable to the method return type.")
+            }
+        }
+    }
+
+    override fun visitFieldAccess(node: CSTNode) {
+        super.visitFieldAccess(node)
+
+        val typeOfPrimary = node.getChild("Primary").getType()
+        val fieldName = node.getChild("IDENTIFIER").lexeme
+
+        if (typeOfPrimary.isArray) {
+            if (fieldName != "length") {
+                throw TypeCheckingError("Tried to access non-length field of an array")
+            }
+
+            node.setType(Type(CSTNode("int"), false))
+        } else {
+            val currentClass = getCurrentClassDeclaration()
+            val accessibleFields = getAccessibleMembers(currentClass, typeOfPrimary.type)
+                .filter({ it.name == "FieldDeclaration" && "static" !in getModifiers(it) })
+
+            val matchingField = accessibleFields.find({ getDeclarationName(it) == fieldName })
+            if (matchingField == null) {
+                throw TypeCheckingError("No field \"$fieldName\" found in class ${getDeclarationName(typeOfPrimary.type)}")
+            }
+
+            node.setType(getDeclarationType(matchingField))
+        }
+    }
+
+    override fun visitConstructorDeclaration(node: CSTNode) {
+        super.visitConstructorDeclaration(node)
+
+        val currentClass = getCurrentClassDeclaration()
+        val superOpt = currentClass.getChild("SuperOpt")
+        if (superOpt.children.size == 1) {
+            val superClassNameNode = superOpt.getDescendant("Name")
+            val superClass = superClassNameNode.getDeclaration()
+            val superClassConstructors = superClass.getChild("ClassBody").getDescendants("ConstructorDeclaration")
+            val emptyParamSuperClassConstructors = superClassConstructors.filter({ it.getChild("ConstructorDeclarator").getChild("FormalParameterListOpt").children.size == 0 })
+            if (emptyParamSuperClassConstructors.size == 0) {
+                throw TypeCheckingError("Super class constructor does not have a constructor with empty parameters defined.")
+            }
+        }
+    }
+
+    override fun visitIfThenStatement(node: CSTNode) {
+        super.visitIfThenStatement(node)
+
+        val typeOfExpression = node.getChild("Expression").getType()
+        if (!typeOfExpression.isBoolean()) {
+            throw TypeCheckingError("Detected a non-boolean expression inside IfThenStatement")
+        }
+    }
+
+    override fun visitIfThenElseStatement(node: CSTNode) {
+        super.visitIfThenElseStatement(node)
+
+        val typeOfExpression = node.getChild("Expression").getType()
+        if (!typeOfExpression.isBoolean()) {
+            throw TypeCheckingError("Detected a non-boolean expression inside IfThenElseStatement")
+        }
+    }
+
+    override fun visitIfThenElseStatementNoShortIf(node: CSTNode) {
+        super.visitIfThenElseStatementNoShortIf(node)
+
+        val typeOfExpression = node.getChild("Expression").getType()
+        if (!typeOfExpression.isBoolean()) {
+            throw TypeCheckingError("Detected a non-boolean expression inside IfThenElseStatementNoShortIf")
+        }
+    }
+
+    override fun visitWhileStatement(node: CSTNode) {
+        super.visitWhileStatement(node)
+
+        val typeOfExpression = node.getChild("Expression").getType()
+        if (!typeOfExpression.isBoolean()) {
+            throw TypeCheckingError("Detected a non-boolean expression inside WhileStatement")
+        }
+    }
+
+    override fun visitWhileStatementNoShortIf(node: CSTNode) {
+        super.visitWhileStatementNoShortIf(node)
+
+        val typeOfExpression = node.getChild("Expression").getType()
+        if (!typeOfExpression.isBoolean()) {
+            throw TypeCheckingError("Detected a non-boolean expression inside WhileStatementNoShortIf")
+        }
+    }
+
+    override fun visitForStatementNoShortIf(node: CSTNode) {
+        super.visitForStatementNoShortIf(node)
+
+        val expressionOpt = node.getChild("ExpressionOpt")
+
+        if (expressionOpt.children.size != 0) {
+            val typeOfExpression = expressionOpt.getChild("Expression").getType()
+            if (!typeOfExpression.isBoolean()) {
+                throw TypeCheckingError("Detected a non-boolean expression inside WhileStatementNoShortIf")
+            }
+        }
     }
 }
 

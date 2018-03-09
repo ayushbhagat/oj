@@ -40,3 +40,4 @@ build/
 gen
 Archive.zip
 .idea/ClojureProjectResolveSettings.xml
+*.log
