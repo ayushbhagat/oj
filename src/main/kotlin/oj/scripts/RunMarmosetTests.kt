@@ -39,7 +39,7 @@ fun main(args: Array<String>) {
 
     for ((testFile, testNum) in tests.zip(IntRange(0, tests.size))) {
         val testFiles = getAllJavaFiles("$TEST_DIR/$testFile")
-        val (exitValue, error, output) = execHideIO("./joosc", *stdlibFiles, *testFiles)
+        val (exitValue, error, output) = execHideIO("./joosc", *testFiles, *stdlibFiles)
 
         val testResultPrefix = "[${format(testNum)}/${format(tests.size - 1)}]"
         val shouldTestFail = testFile.startsWith("Je")

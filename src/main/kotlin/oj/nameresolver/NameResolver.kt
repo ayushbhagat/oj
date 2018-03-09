@@ -34,7 +34,7 @@ class NameResolutionVisitor(
 ) : CSTNodeVisitor() {
 
     enum class ResolutionDepth {
-        TypeDeclaration, MethodDeclaration, All
+        TypeDeclaration, MemberDeclaration, All
     }
 
     private var resolutionDepth = ResolutionDepth.All
@@ -809,6 +809,15 @@ class NameResolutionVisitor(
             environment.popScope()
         })
 
+        val ownFieldDeclarations = classBody.getDescendants("FieldDeclaration")
+
+        ownFieldDeclarations.forEach({ fieldDeclaration ->
+            val type = fieldDeclaration.getChild("Type")
+            environment.pushScope()
+            this.visit(type)
+            environment.popScope()
+        })
+
         val constructorDeclarations = node.getDescendants("ConstructorDeclaration")
 
         constructorDeclarations.forEach({ constructorDeclaration ->
@@ -818,7 +827,7 @@ class NameResolutionVisitor(
             environment.popScope()
         })
 
-        if (resolutionDepth == ResolutionDepth.MethodDeclaration) {
+        if (resolutionDepth == ResolutionDepth.MemberDeclaration) {
             return
         }
 
@@ -1146,7 +1155,6 @@ class NameResolutionVisitor(
          * 1. Do name resolution on current field if it's an own field.
          * 2. Add this field to the environment.
          */
-        val ownFieldDeclarations = classBody.getDescendants("FieldDeclaration")
         val isOwnFieldDeclaration = { otherFieldDeclaration: CSTNode ->
             ownFieldDeclarations.filter({ it === otherFieldDeclaration }).isNotEmpty()
         }
@@ -1252,7 +1260,7 @@ class NameResolutionVisitor(
             environment.popScope()
         })
 
-        if (resolutionDepth == ResolutionDepth.MethodDeclaration) {
+        if (resolutionDepth == ResolutionDepth.MemberDeclaration) {
             return
         }
 
@@ -2522,7 +2530,7 @@ class NameResolver {
             }
 
             visitPackages(NameResolutionVisitor.ResolutionDepth.TypeDeclaration)
-            visitPackages(NameResolutionVisitor.ResolutionDepth.MethodDeclaration)
+            visitPackages(NameResolutionVisitor.ResolutionDepth.MemberDeclaration)
             visitPackages(NameResolutionVisitor.ResolutionDepth.All)
 
             return visitor.getNameResolution()

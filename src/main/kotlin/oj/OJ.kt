@@ -19,6 +19,7 @@ fun main(args: Array<String>) {
 
     val filenames = args.toList()
 //    val filenames = listOf(
+//        "./test/marmoset/a3/J1_forwardfield1.java",
 //        "./test/marmoset/stdlib/3.0/java/io/OutputStream.java",
 //        "./test/marmoset/stdlib/3.0/java/io/PrintStream.java",
 //        "./test/marmoset/stdlib/3.0/java/io/Serializable.java",
@@ -33,8 +34,7 @@ fun main(args: Array<String>) {
 //        "./test/marmoset/stdlib/3.0/java/lang/Short.java",
 //        "./test/marmoset/stdlib/3.0/java/lang/String.java",
 //        "./test/marmoset/stdlib/3.0/java/lang/System.java",
-//        "./test/marmoset/stdlib/3.0/java/util/Arrays.java",
-//        "./test/marmoset/a2/J1_access_override2.java"
+//        "./test/marmoset/stdlib/3.0/java/util/Arrays.java"
 //    )
 
     try {
