@@ -81,6 +81,61 @@ class NameResolutionVisitor(
         throw PackageNotFoundForType(getDeclarationName(node))
     }
 
+    fun isSubClass(child: CSTNode, potentialAncestor: CSTNode): Boolean {
+        if (child.name != "ClassDeclaration" || potentialAncestor.name != "ClassDeclaration") {
+            throw CSTNodeError("Tried to check sub-class relationship on non-classes: ${child.name} ${potentialAncestor.name}")
+        }
+
+        val baseSuperClass = getClassFromIODEnvironment("Object")
+        if (potentialAncestor == baseSuperClass) {
+            return true
+        }
+
+        if (child === potentialAncestor) {
+            return true
+        }
+
+        val superOptNode = child.getChild("SuperOpt")
+        val superNameNode = if (superOptNode.children.size == 1) superOptNode.getDescendant("Name") else null
+
+        if (superNameNode == null) {
+            return false
+        }
+
+        return isSubClass(superNameNode.getDeclaration(), potentialAncestor)
+    }
+
+    fun isSubInterface(child: CSTNode, potentialAncestor: CSTNode): Boolean {
+        if (child.name != "InterfaceDeclaration") {
+            throw CSTNodeError("Tried to check sub-interface relationship on non-interface child: ${child.name}")
+        }
+
+        val baseSuperClass = getClassFromIODEnvironment("Object")
+        if (potentialAncestor == baseSuperClass) {
+            return true
+        }
+
+        if (potentialAncestor.name != "InterfaceDeclaration") {
+            throw CSTNodeError("Tried to check sub-interface relationship on non-interface potential ancestor: ${potentialAncestor.name}")
+        }
+
+        if (child === potentialAncestor) {
+            return true
+        }
+
+        val extendedInterfaces = child.getChild("ExtendsInterfaceOpt").getDescendants("Name").map({ it.getDeclaration() })
+
+        if (extendedInterfaces.isEmpty()) {
+            return false
+        }
+
+        if (extendedInterfaces.any({ extendedInterface -> isSubInterface(extendedInterface, potentialAncestor)})) {
+            return true
+        }
+
+        return false
+    }
+
     fun canAccessProtectedMethodsOf(currentClass: CSTNode, otherClass: CSTNode): Boolean {
         if (currentClass.name != "ClassDeclaration" && otherClass.name != "ClassDeclaration") {
             throw Exception("Expected currentClass and otherClass to be ClassDeclarations")
@@ -88,67 +143,7 @@ class NameResolutionVisitor(
 
         val isInSamePackage = getPackageOfType(currentClass) == getPackageOfType(otherClass)
 
-        return isSubtype(currentClass, otherClass) || isInSamePackage
-    }
-
-    fun getAccessibleMembers(currentClass: CSTNode, typeToInspect: CSTNode): List<CSTNode> {
-        return if (typeToInspect.name == "ClassDeclaration") {
-            val shouldAddProtectedMethods = isSubClass(typeToInspect, currentClass)
-
-            val classToInspect = typeToInspect
-
-            val accessibleMembers = mutableListOf<CSTNode>()
-            val inaccessibleMembers = mutableSetOf<CSTNode>()
-
-            var currentClassToInspect = classToInspect
-
-            while (true) {
-                val classBody = currentClassToInspect.getChild("ClassBody")
-                val members = classBody.getDescendants({ it.name in listOf("FieldDeclaration", "MethodDeclaration", "AbstractMethodDeclaration")})
-
-                val publicMembers = members.filter({ member -> "public" in getModifiers(member) })
-
-                accessibleMembers.addAll(publicMembers)
-
-                if (shouldAddProtectedMethods) {
-                    val protectedMembers = members.filter({ member -> "protected" in getModifiers(member) })
-
-                    if (canAccessProtectedMethodsOf(currentClass, currentClassToInspect)) {
-                        accessibleMembers.addAll(protectedMembers)
-                    } else {
-                        inaccessibleMembers.addAll(protectedMembers)
-                    }
-                }
-
-                val superOpt = currentClassToInspect.getChild("SuperOpt")
-                if (superOpt.children.isEmpty()) {
-                    break
-                }
-
-                currentClassToInspect = superOpt.getDescendant("Name").getDeclaration()
-            }
-
-            return accessibleMembers.filter({ accessibleMember ->
-                inaccessibleMembers.filter(fun (inaccessibleMember: CSTNode): Boolean {
-                    if (inaccessibleMember.name == accessibleMember.name) {
-                        if (inaccessibleMember.name == "FieldDeclaration") {
-                            return getDeclarationName(inaccessibleMember) == getDeclarationName(accessibleMember)
-                        }
-
-                        if (inaccessibleMember.name == "MethodDeclaration") {
-                            return canMethodsReplaceOneAnother(
-                                accessibleMember.getChild("MethodHeader"),
-                                inaccessibleMember.getChild("MethodHeader")
-                            )
-                        }
-                    }
-
-                    return false
-                }).isEmpty()
-            }) + getAllMethodsOfAllInterfacesImplementedInClassHierarchyOf(classToInspect)
-        } else {
-            getInterfaceInheritedMethods(typeToInspect)
-        }
+        return isSubClass(currentClass, otherClass) || isInSamePackage
     }
 
     fun getAccessibleInstanceMembers(currentClass: CSTNode, typeToInspect: CSTNode): List<CSTNode> {
@@ -157,7 +152,7 @@ class NameResolutionVisitor(
         }
 
         return if (typeToInspect.name == "ClassDeclaration") {
-            val shouldAddProtectedMethods = isSubClass(typeToInspect, currentClass)
+            val shouldAddProtectedMethods = canAccessProtectedMethodsOf(typeToInspect, currentClass)
 
             val classToInspect = typeToInspect
 
@@ -187,11 +182,19 @@ class NameResolutionVisitor(
                 }
 
                 val superOpt = currentClassToInspect.getChild("SuperOpt")
-                if (superOpt.children.isEmpty()) {
-                    break
-                }
+                if (superOpt.children.isNotEmpty()) {
+                    currentClassToInspect = superOpt.getDescendant("Name").getDeclaration()
+                } else {
+                    val baseSuperClass = getClassFromIODEnvironment("Object")
 
-                currentClassToInspect = superOpt.getDescendant("Name").getDeclaration()
+                    if (currentClassToInspect === baseSuperClass) {
+                        break
+                    }
+
+                    if (baseSuperClass != null) {
+                        currentClassToInspect = baseSuperClass
+                    }
+                }
             }
 
             return accessibleMembers.filter({ accessibleMember ->
@@ -247,11 +250,19 @@ class NameResolutionVisitor(
             }
 
             val superOpt = currentClassToInspect.getChild("SuperOpt")
-            if (superOpt.children.isEmpty()) {
-                break
-            }
+            if (superOpt.children.isNotEmpty()) {
+                currentClassToInspect = superOpt.getDescendant("Name").getDeclaration()
+            } else {
+                val baseSuperClass = getClassFromIODEnvironment("Object")
 
-            currentClassToInspect = superOpt.getDescendant("Name").getDeclaration()
+                if (currentClassToInspect === baseSuperClass) {
+                    break
+                }
+
+                if (baseSuperClass != null) {
+                    currentClassToInspect = baseSuperClass
+                }
+            }
         }
 
         return accessibleMembers.filter({ accessibleMember ->
@@ -647,9 +658,7 @@ class NameResolutionVisitor(
                 return true
             }
         } else if (typeOfB.type.name == "InterfaceDeclaration" && areBothArraysOrNonArrays) {
-            if (typeOfA.type == baseSuperClass) {
-                return true
-            } else if (isSubInterface(typeOfB.type, typeOfA.type)) {
+            if (isSubInterface(typeOfB.type, typeOfA.type)) {
                 return true
             }
         } else if (typeOfB.type.name == "ClassDeclaration" && areBothArraysOrNonArrays) {
@@ -658,7 +667,7 @@ class NameResolutionVisitor(
                     return true
                 }
             } else if (typeOfA.type.name == "ClassDeclaration") {
-                if (isSubClass(typeOfB.type, typeOfA.type) || typeOfA.type == baseSuperClass) {
+                if (isSubClass(typeOfB.type, typeOfA.type)) {
                     return true
                 }
             }

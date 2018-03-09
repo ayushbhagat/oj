@@ -9,12 +9,12 @@ import java.io.InputStreamReader
 const val MARMOSET_DIR = "./test/marmoset"
 
 fun main(args: Array<String>) {
-    val assignment = "A3"
+    val assignment = "a3"
     val stdlibVersion = when (assignment) {
-        "A2" -> "2.0"
-        "A3" -> "3.0"
-        "A4" -> "4.0"
-        "A5" -> "5.0"
+        "a2" -> "2.0"
+        "a3" -> "3.0"
+        "a4" -> "4.0"
+        "a5" -> "5.0"
         else -> {
             throw Exception("Found no stdlib")
         }

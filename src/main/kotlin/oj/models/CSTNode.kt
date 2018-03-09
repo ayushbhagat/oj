@@ -342,59 +342,6 @@ fun getDeclarationName(declaration: CSTNode): String {
     throw TriedToGetNameOfAnUnsupportedCSTNode(declaration.name)
 }
 
-fun isSubClass(child: CSTNode, potentialParent: CSTNode): Boolean {
-    if (child.name != "ClassDeclaration" || potentialParent.name != "ClassDeclaration") {
-        throw CSTNodeError("Tried to check sub-class relationship on non-classes: ${child.name} ${potentialParent.name}")
-    }
-
-    if (child === potentialParent) {
-        return true
-    }
-
-    val superOptNode = child.getChild("SuperOpt")
-    val superNameNode = if (superOptNode.children.size == 1) superOptNode.getDescendant("Name") else null
-
-    if (superNameNode == null) {
-        return false
-    }
-
-    return isSubClass(superNameNode.getDeclaration(), potentialParent)
-}
-
-fun isSubInterface(child: CSTNode, potentialParent: CSTNode): Boolean {
-    if (child.name != "InterfaceDeclaration" || potentialParent.name != "InterfaceDeclaration") {
-        throw CSTNodeError("Tried to check sub-interface relationship on non-interfaces: ${child.name} ${potentialParent.name}")
-    }
-
-    if (child === potentialParent) {
-        return true
-    }
-
-    val extendedInterfaces = child.getChild("ExtendsInterfaceOpt").getDescendants("Name").map({ it.getDeclaration() })
-
-    if (extendedInterfaces.isEmpty()) {
-        return false
-    }
-
-    if (extendedInterfaces.any({ extendedInterface -> isSubInterface(extendedInterface, potentialParent)})) {
-        return true
-    }
-
-    return false
-}
-
-fun isSubtype(child: CSTNode, potentialParent: CSTNode): Boolean {
-    if (child.name == "ClassDeclaration" && potentialParent.name == "ClassDeclaration") {
-        return isSubClass(child, potentialParent)
-    }
-
-    if (child.name == "InterfaceDeclaration" && potentialParent.name == "InterfaceDeclaration") {
-        return isSubInterface(child, potentialParent)
-    }
-
-    return false
-}
-
 fun isInterfaceImplementedByClass(interfaceDeclaration: CSTNode, classDeclaration: CSTNode): Boolean {
     if (classDeclaration.name != "ClassDeclaration") {
         throw CSTNodeError("Expected classDeclaration to be a \"ClassDeclaration\", but found \"${classDeclaration.name}\"")

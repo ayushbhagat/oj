@@ -34,7 +34,7 @@ fun main(args: Array<String>) {
 //        "./test/marmoset/stdlib/3.0/java/lang/String.java",
 //        "./test/marmoset/stdlib/3.0/java/lang/System.java",
 //        "./test/marmoset/stdlib/3.0/java/util/Arrays.java",
-//        "test/marmoset/a3/J1_namelinking3.java"
+//        "./test/marmoset/a2/J1_access_override2.java"
 //    )
 
     try {
