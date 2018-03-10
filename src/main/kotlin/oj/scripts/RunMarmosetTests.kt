@@ -4,7 +4,8 @@ import java.io.File
 import java.io.BufferedReader
 import java.io.InputStream
 import java.io.InputStreamReader
-
+import java.util.concurrent.Semaphore
+import kotlin.concurrent.thread
 
 const val MARMOSET_DIR = "./test/marmoset"
 
@@ -35,30 +36,67 @@ fun main(args: Array<String>) {
     val stdlibFiles = getAllJavaFiles(STDLIB_DIR)
     val tests = File(TEST_DIR).list().sorted()
 
-    var testsPassed = 0
+    val testsPassed = MutableList(tests.size, { false })
+    val testsDone = List(tests.size, { EmptySemaphore(1) })
+    val testErrors = MutableList(tests.size, { "" })
 
-    for ((testFile, testNum) in tests.zip(IntRange(0, tests.size))) {
-        val testFiles = getAllJavaFiles("$TEST_DIR/$testFile")
-        val (exitValue, error, output) = execHideIO("./joosc", *testFiles, *stdlibFiles)
+    val numCores = Runtime.getRuntime().availableProcessors()
+
+    val threads = IntRange(0, numCores - 1).map({ threadNum ->
+        thread(start = true) {
+            var testNum = threadNum
+            while (testNum < tests.size) {
+                val test = tests[testNum]
+
+                val testFiles = getAllJavaFiles("$TEST_DIR/$test")
+                val (exitValue, error, output) = execHideIO("./joosc", *testFiles, *stdlibFiles)
+
+                val shouldTestFail = test.startsWith("Je")
+
+                if (shouldTestFail && exitValue == 42 || !shouldTestFail && exitValue == 0) {
+                    testsPassed[testNum] = true
+                } else {
+                    testsPassed[testNum] = false
+                    if (shouldTestFail) {
+                        testErrors[testNum] = output
+                    } else {
+                        testErrors[testNum] = error
+                    }
+                }
+
+                testsDone[testNum].release()
+                testNum += numCores
+            }
+        }
+    })
+
+
+    tests.zip(IntRange(0, tests.size - 1)).forEach({(testFile, testNum) ->
+        testsDone[testNum].acquire()
 
         val testResultPrefix = "[${format(testNum)}/${format(tests.size - 1)}]"
-        val shouldTestFail = testFile.startsWith("Je")
-
-        if (shouldTestFail && exitValue == 42 || !shouldTestFail && exitValue == 0) {
-            testsPassed += 1
+        if (testsPassed[testNum]) {
             System.out.println("$testResultPrefix PASS: $testFile")
         } else {
             System.err.println("$testResultPrefix FAILED: $testFile")
-            if (shouldTestFail) {
-                System.err.println(output)
-            } else {
-                System.err.println(error)
-            }
+            System.err.println(testErrors[testNum])
         }
-    }
+    })
+
+    threads.forEach({ thread ->
+        thread.join()
+    })
+
+    val numTestsPassed = testsPassed.filter({ it }).size
 
     println()
-    println("Tests passed: ${format(testsPassed)}/${format(tests.size)}")
+    println("Tests passed: ${format(numTestsPassed)}/${format(tests.size)}")
+}
+
+fun EmptySemaphore(n: Int): Semaphore {
+    val sem = Semaphore(n)
+    sem.acquire(n)
+    return sem
 }
 
 fun getAllJavaFiles(pathname: String): Array<String> {
