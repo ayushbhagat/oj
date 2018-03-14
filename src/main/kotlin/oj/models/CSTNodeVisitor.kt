@@ -111,6 +111,8 @@ open class CSTNodeVisitor {
             "EqualityExpression" -> visitEqualityExpression(node)
             "ConditionalAndExpression" -> visitConditionalAndExpression(node)
             "ConditionalOrExpression" -> visitConditionalOrExpression(node)
+            "OrExpression" -> visitOrExpression(node)
+            "AndExpression" -> visitAndExpression(node)
             "AssignmentExpression" -> visitAssignmentExpression(node)
             "Assignment" -> visitAssignment(node)
             "LeftHandSide" -> visitLeftHandSide(node)
@@ -568,6 +570,14 @@ open class CSTNodeVisitor {
     }
 
     open fun visitInteger(node: CSTNode) {
+        node.children.forEach({ child -> visit(child) })
+    }
+
+    open fun visitOrExpression(node: CSTNode) {
+        node.children.forEach({ child -> visit(child) })
+    }
+
+    open fun visitAndExpression(node: CSTNode) {
         node.children.forEach({ child -> visit(child) })
     }
 }

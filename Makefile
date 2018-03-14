@@ -1,4 +1,4 @@
-.PHONY: build convert_dfa_regex_to_string create_scanner_dfa clean create_jlalr_dfa convert_jlalr_output_format_to_dfa
+.PHONY: build convert_dfa_regex_to_string create_scanner_dfa clean create_jlalr_dfa convert_jlalr_output_format_to_dfa run_marmoset_tests
 
 default: build convert_dfa_regex_to_string create_scanner_dfa create_jlalr_dfa convert_jlalr_output_format_to_dfa
 
@@ -21,6 +21,9 @@ create_jlalr_dfa:
 
 convert_jlalr_output_format_to_dfa:
 	java -cp gen/oj.jar oj.scripts.ConvertJLALROutputFormatToDFAKt
+
+run_marmoset_tests:
+	java -cp gen/oj.jar oj.scripts.RunMarmosetTestsKt
 
 clean:
 	rm -rf gen
