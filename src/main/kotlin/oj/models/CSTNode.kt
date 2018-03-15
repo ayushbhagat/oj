@@ -15,27 +15,23 @@ class RanOutOfIds: CSTNodeError("Tried to assign unique id to CSTNode, but ran o
 data class CSTNode(
     val name: String,
     val lexeme: String = "",
-    val children: MutableList<CSTNode> = mutableListOf()
+    val children: MutableList<CSTNode> = mutableListOf(),
+    val id: Int = CSTNode.nextId()
 ) {
-    private var id = CSTNode.nextId()
     companion object {
-        val declarations: MutableMap<CSTNode, CSTNode> = mutableMapOf()
-        val types: MutableMap<CSTNode, Type> = mutableMapOf()
-        val downCast: MutableSet<CSTNode> = mutableSetOf()
+        private val declarations: MutableMap<CSTNode, CSTNode> = mutableMapOf()
+        private val types: MutableMap<CSTNode, Type> = mutableMapOf()
+        private val downCast: MutableSet<CSTNode> = mutableSetOf()
 
-        var id: Int = 0
+        private var id: Int = 0
 
-        fun nextId(): Int {
+        private fun nextId(): Int {
             if (CSTNode.id == Int.MAX_VALUE) {
                 throw RanOutOfIds()
             }
             CSTNode.id += 1
             return CSTNode.id
         }
-    }
-
-    fun getId(): Int {
-        return id
     }
 
     // TODO: Two names that are value equal will resolve to the same declaration. This is incorrect. Fix.
