@@ -43,6 +43,7 @@ class NameResolutionVisitor(
     private var currentFieldDeclaration: CSTNode? = null
     private var currentMethodDeclaration: CSTNode? = null
     private var currentLeftHandSide: CSTNode? = null
+    private var currentLocalVariableDeclaration: CSTNode? = null
 
     fun attachImportOnDemandEnvironment(declarations: Environment) {
         importOnDemandDeclarationEnvironment = declarations
@@ -527,16 +528,50 @@ class NameResolutionVisitor(
         }
     }
 
+    fun validateUsageOfLocalVariableDeclaration(localVariableDeclaration: CSTNode) {
+        if (getCurrentLocalVariableDeclaration() != null) {
+            val currentLocalVariableDeclaration = getCurrentLocalVariableDeclaration()!!
+            val currentLocalVariableDeclarationName = getDeclarationName(currentLocalVariableDeclaration)
+
+            var shouldCheckUsageInInitializer = true
+
+            if (getCurrentLeftHandSide() != null) {
+                val currentLeftHandSide = getCurrentLeftHandSide()!!
+
+                if (currentLeftHandSide.children[0].name == "Name") {
+                    val nameNode = currentLeftHandSide.getChild("Name")
+                    val identifiers = nameNode.getDescendants("IDENTIFIER").map({ it.lexeme })
+
+                    if (identifiers.size == 1) {
+                        if (identifiers[0] == currentLocalVariableDeclarationName) {
+                            shouldCheckUsageInInitializer = false
+                        }
+                    }
+                }
+            }
+
+            if (shouldCheckUsageInInitializer && getDeclarationName(localVariableDeclaration) == currentLocalVariableDeclarationName) {
+                throw NameResolutionError("Local variable \"${currentLocalVariableDeclarationName}\" used to initialize itself")
+            }
+
+        }
+    }
+
     fun resolveExpressionName(nameNode: CSTNode) {
         val name = nameNode.getDescendants("IDENTIFIER").map({ it.lexeme })
         if (name.size == 1) {
             val expressionName = name[0]
+
             // Ensure that the expression name is defined. If so, add it to the name resolution, otherwise throw error.
             val declarationNode = environment.find(expressionName)
             addNameResolution(nameNode, declarationNode)
 
             if (declarationNode.name == "FieldDeclaration") {
                 validateUsageOfFieldDeclaration(declarationNode)
+            }
+
+            if (declarationNode.name == "LocalVariableDeclaration") {
+                validateUsageOfLocalVariableDeclaration(declarationNode)
             }
 
             nameNode.setType(getDeclarationType(declarationNode))
@@ -1009,12 +1044,6 @@ class NameResolutionVisitor(
                 }).isEmpty()
             })
 
-//            val concreteMethodsNotUsedToImplementAbstractMethods = concreteMethods.filter({ concreteMethod ->
-//                abstractMethods.filter({ abstractMethod ->
-//                    canMethodsReplaceOneAnother(abstractMethod.getChild("MethodHeader"), concreteMethod.getChild("MethodHeader"))
-//                }).isEmpty()
-//            })
-
             if (abstractMethodsThatArentConcretelyImplemented.isNotEmpty()) {
                 return false
             }
@@ -1065,12 +1094,6 @@ class NameResolutionVisitor(
 
                 return finalUnimplementedAbstractInterfaceMethods.isEmpty()
             } else {
-//                val remainingConcreteMethods = concreteMethods.filter({ concreteMethod ->
-//                    unshadowedPotentiallyUnimplementedInterfaceMethods.filter({ unimplementedInterfaceMethod ->
-//                        canMethodsReplaceOneAnother(concreteMethod.getChild("MethodHeader"), unimplementedInterfaceMethod.getChild("MethodHeader"))
-//                    }).isEmpty()
-//                })
-
                 val superClassDeclaration = superNames[0].getDeclaration()
                 return areInterfaceMethodsImplemented(superClassDeclaration, concreteMethods, remainingUnimplementedAbstractInterfaceMethods)
             }
@@ -1484,6 +1507,7 @@ class NameResolutionVisitor(
      * As the type of a local variable (§14.4)
      */
     override fun visitLocalVariableDeclaration(node: CSTNode) {
+        currentLocalVariableDeclaration = node;
         val variableDeclaratorNode = node.getChild("VariableDeclarator")
         val variableName = variableDeclaratorNode.getChild("IDENTIFIER").lexeme
 
@@ -1501,6 +1525,12 @@ class NameResolutionVisitor(
         if (!colonEquals(localVariableType, expressionType)) {
             throw TypeCheckingError("LocalVariableDeclaration initializer is not type assignable to the variable type.")
         }
+
+        currentLocalVariableDeclaration = null;
+    }
+
+    fun getCurrentLocalVariableDeclaration(): CSTNode? {
+        return currentLocalVariableDeclaration
     }
 
     /**
@@ -2267,7 +2297,7 @@ class NameResolutionVisitor(
             return
         }
 
-        val currentMethodReturnType =getDeclarationType(currentMethodDeclaration)
+        val currentMethodReturnType = getDeclarationType(currentMethodDeclaration)
 
         if (currentMethodReturnType.type.name == "void") {
             if (expressionOpt.children.size != 0) {

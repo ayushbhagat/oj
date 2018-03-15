@@ -182,6 +182,10 @@ class DeadCodeDetector(val packages: Map<String, List<CSTNode>>) : CSTNodeVisito
             return false
         }
 
+        if (!typeOfNode.isReference()) {
+            return false
+        }
+
         if ("java.lang" == getPackageNameOfType(typeOfNode.type)) {
             return true
         }
