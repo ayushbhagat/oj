@@ -2254,9 +2254,20 @@ class NameResolutionVisitor(
         super.visitReturnStatement(node)
 
         val currentMethodDeclaration = getCurrentMethodDeclaration()
-        val currentMethodReturnType = getDeclarationType(currentMethodDeclaration!!)
-
         val expressionOpt = node.getChild("ExpressionOpt")
+
+        /**
+         * Constructors can also have returns.
+         */
+        if (currentMethodDeclaration == null) {
+            if (expressionOpt.children.size != 0) {
+                throw TypeCheckingError("Tried to return something from a constructor of ${getDeclarationName(getCurrentClassDeclaration())}.")
+            }
+
+            return
+        }
+
+        val currentMethodReturnType =getDeclarationType(currentMethodDeclaration)
 
         if (currentMethodReturnType.type.name == "void") {
             if (expressionOpt.children.size != 0) {

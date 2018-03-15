@@ -10,7 +10,7 @@ import kotlin.concurrent.thread
 const val MARMOSET_DIR = "./test/marmoset"
 
 fun main(args: Array<String>) {
-    val assignment = "a3"
+    val assignment = "a4"
     val stdlibVersion = when (assignment) {
         "a2" -> "2.0"
         "a3" -> "3.0"
