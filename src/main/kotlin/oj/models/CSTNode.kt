@@ -184,7 +184,10 @@ fun areTypesTheSame(type: CSTNode, otherType: CSTNode) : Boolean {
             }
 
             if (arrayType.children[0].name == "PrimitiveType") {
-                if (arrayType.children[0] != otherArrayType.children[0]) {
+                val primitiveType = arrayType.children[0]
+                val otherPrimitiveType = otherArrayType.children[0]
+
+                if (primitiveType.children[0].name != otherPrimitiveType.children[0].name) {
                     return false
                 }
             } else {

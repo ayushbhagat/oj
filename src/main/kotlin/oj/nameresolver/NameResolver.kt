@@ -44,6 +44,7 @@ class NameResolutionVisitor(
     private var currentMethodDeclaration: CSTNode? = null
     private var currentLeftHandSide: CSTNode? = null
     private var currentLocalVariableDeclaration: CSTNode? = null
+    private var isCurrentLocalVariableDeclarationInitialized: Boolean = false
 
     fun attachImportOnDemandEnvironment(declarations: Environment) {
         importOnDemandDeclarationEnvironment = declarations
@@ -188,13 +189,11 @@ class NameResolutionVisitor(
                 } else {
                     val baseSuperClass = getClassFromIODEnvironment("Object")
 
-                    if (currentClassToInspect === baseSuperClass) {
+                    if (baseSuperClass == null || currentClassToInspect === baseSuperClass) {
                         break
                     }
 
-                    if (baseSuperClass != null) {
-                        currentClassToInspect = baseSuperClass
-                    }
+                    currentClassToInspect = baseSuperClass
                 }
             }
 
@@ -256,13 +255,11 @@ class NameResolutionVisitor(
             } else {
                 val baseSuperClass = getClassFromIODEnvironment("Object")
 
-                if (currentClassToInspect === baseSuperClass) {
+                if (baseSuperClass == null || currentClassToInspect === baseSuperClass) {
                     break
                 }
 
-                if (baseSuperClass != null) {
-                    currentClassToInspect = baseSuperClass
-                }
+                currentClassToInspect = baseSuperClass
             }
         }
 
@@ -533,8 +530,6 @@ class NameResolutionVisitor(
             val currentLocalVariableDeclaration = getCurrentLocalVariableDeclaration()!!
             val currentLocalVariableDeclarationName = getDeclarationName(currentLocalVariableDeclaration)
 
-            var shouldCheckUsageInInitializer = true
-
             if (getCurrentLeftHandSide() != null) {
                 val currentLeftHandSide = getCurrentLeftHandSide()!!
 
@@ -544,13 +539,13 @@ class NameResolutionVisitor(
 
                     if (identifiers.size == 1) {
                         if (identifiers[0] == currentLocalVariableDeclarationName) {
-                            shouldCheckUsageInInitializer = false
+                            isCurrentLocalVariableDeclarationInitialized = true
                         }
                     }
                 }
             }
 
-            if (shouldCheckUsageInInitializer && getDeclarationName(localVariableDeclaration) == currentLocalVariableDeclarationName) {
+            if (!isCurrentLocalVariableDeclarationInitialized && getDeclarationName(localVariableDeclaration) == currentLocalVariableDeclarationName) {
                 throw NameResolutionError("Local variable \"${currentLocalVariableDeclarationName}\" used to initialize itself")
             }
 
@@ -1507,7 +1502,8 @@ class NameResolutionVisitor(
      * As the type of a local variable (§14.4)
      */
     override fun visitLocalVariableDeclaration(node: CSTNode) {
-        currentLocalVariableDeclaration = node;
+        currentLocalVariableDeclaration = node
+        isCurrentLocalVariableDeclarationInitialized = false
         val variableDeclaratorNode = node.getChild("VariableDeclarator")
         val variableName = variableDeclaratorNode.getChild("IDENTIFIER").lexeme
 
@@ -1526,7 +1522,8 @@ class NameResolutionVisitor(
             throw TypeCheckingError("LocalVariableDeclaration initializer is not type assignable to the variable type.")
         }
 
-        currentLocalVariableDeclaration = null;
+        isCurrentLocalVariableDeclarationInitialized = false
+        currentLocalVariableDeclaration = null
     }
 
     fun getCurrentLocalVariableDeclaration(): CSTNode? {
