@@ -13,12 +13,21 @@ data class Environment(
         constructor(): super("Lookup failed")
     }
 
-    fun pushScope() {
+    private fun pushScope() {
         scopes.push(LinkedList())
     }
 
-    fun popScope() {
+    private fun popScope() {
         scopes.pop()
+    }
+
+    fun <T> withNewScope(fn: () -> T): T {
+        pushScope()
+        try {
+            return fn()
+        } finally {
+            popScope()
+        }
     }
 
     fun push(name: String, declarationNode: CSTNode) {
