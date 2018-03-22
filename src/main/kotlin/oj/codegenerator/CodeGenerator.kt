@@ -2,7 +2,7 @@ package oj.codegenerator
 
 import oj.models.CSTNode
 import oj.models.PackageManager
-import oj.nameresolver.isClassOrInterfaceDeclaration
+import oj.models.isClassOrInterfaceDeclaration
 import java.io.File
 
 class CodeGenerator {

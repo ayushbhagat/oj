@@ -17,14 +17,9 @@ open class TwoMethodsInClassHierarchyWithSameSignatureButDifferentReturnTypes(cl
 open class IllegalMethodReplacement(typeName: String, methodName: String): HierarchyCheckingError("A method \"$methodName\" in type \"$typeName\" illegally overrides a method it inherits")
 open class InterfaceExtendsAnotherMoreThanOnce(interfaceName: String, duplicateInterfaceName: String): HierarchyCheckingError("Interface \"$interfaceName\" extends interface \"$duplicateInterfaceName\" more than once.")
 open class InterfaceExtendsNonInterface(interfaceName: String, nonInterfaceName: String) : HierarchyCheckingError("Interface \"$interfaceName\" extends a non-interface \"$nonInterfaceName\"")
-open class InterfaceHierarchyIsCyclic(interfaceName: String, firstDuplicateInterface: String) : HierarchyCheckingError("Detected a duplicate interface \"$firstDuplicateInterface\" in interface \"$interfaceName\"'s hierarchy.")
 open class DuplicateMethodsDetectedInInterface(interfaceName: String, methodName: String): HierarchyCheckingError("Detected a duplicate method \"$methodName\" in interface \"$interfaceName\"")
 open class TwoMethodsInInterfaceHierarchyWithSameSignatureButDifferentReturnTypes(interfaceName: String, methodName: String): HierarchyCheckingError("Two methods with the same name, \"$methodName\", but different return type exist in the interface hierarchy (including interface methods) of interface \"$interfaceName\"")
 open class ConcreteMethodImplementsPublicMethodWithProtectedVisibility(className: String, methodName: String) : HierarchyCheckingError("Concrete method \"$className.$methodName\" implements \"public\" method with \"protected\" visibility.")
-
-val isClassOrInterfaceDeclaration = { node: CSTNode ->
-    node.name == "ClassDeclaration" || node.name == "InterfaceDeclaration"
-}
 
 val PRIMITIVE_TYPE_NAMES = setOf("byte", "short", "int", "char", "boolean")
 

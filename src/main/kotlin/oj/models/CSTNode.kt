@@ -429,3 +429,7 @@ fun getQualifiedIdentifierFromName(name: CSTNode): String {
     }
     return name.getDescendants("IDENTIFIER").map({ it.lexeme }).joinToString(".")
 }
+
+val isClassOrInterfaceDeclaration = { node: CSTNode ->
+    node.name == "ClassDeclaration" || node.name == "InterfaceDeclaration"
+}

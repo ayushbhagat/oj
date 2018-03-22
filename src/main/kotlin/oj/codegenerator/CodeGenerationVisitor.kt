@@ -5,7 +5,9 @@ import oj.models.CSTNodeVisitor
 import oj.models.PackageManager
 import oj.models.getDeclarationName
 
-class CodeGenerationVisitor(val packageManager: PackageManager) : CSTNodeVisitor() {
+class CodeGenerationVisitor(
+    val packageManager: PackageManager
+) : CSTNodeVisitor() {
     private var code = ""
     private var indent = 0
 

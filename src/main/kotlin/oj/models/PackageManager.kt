@@ -1,7 +1,5 @@
 package oj.models
 
-import oj.nameresolver.isClassOrInterfaceDeclaration
-
 class PackageManager(
     val packages: Map<String, List<CSTNode>>
 ) {
