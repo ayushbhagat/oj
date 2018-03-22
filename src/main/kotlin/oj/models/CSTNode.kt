@@ -10,28 +10,15 @@ class FoundManyChildren: CSTNodeError("Found many descendants, expected 1.")
 class FoundNoDescendant : CSTNodeError("Found no descendants, expected 1.")
 class FoundManyDescendants: CSTNodeError("Found many descendants, expected 1.")
 
-class RanOutOfIds: CSTNodeError("Tried to assign unique id to CSTNode, but ran out.")
-
-data class CSTNode(
+class CSTNode(
     val name: String,
     val lexeme: String = "",
-    val children: MutableList<CSTNode> = mutableListOf(),
-    val id: Int = CSTNode.nextId()
+    val children: MutableList<CSTNode> = mutableListOf()
 ) {
     companion object {
         private val declarations: MutableMap<CSTNode, CSTNode> = mutableMapOf()
         private val types: MutableMap<CSTNode, Type> = mutableMapOf()
         private val downCast: MutableSet<CSTNode> = mutableSetOf()
-
-        private var id: Int = 0
-
-        private fun nextId(): Int {
-            if (CSTNode.id == Int.MAX_VALUE) {
-                throw RanOutOfIds()
-            }
-            CSTNode.id += 1
-            return CSTNode.id
-        }
     }
 
     // TODO: Two names that are value equal will resolve to the same declaration. This is incorrect. Fix.
