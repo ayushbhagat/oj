@@ -67,7 +67,7 @@ class PackageManager(
     class TriedToGetPackageOfNonType(nodeType: String): PackageManagerError("Tried to access package of a non-type CSTNode: \"$nodeType\"")
     class PackageNotFoundForType(typeName: String): PackageManagerError("Package not found for type \"$typeName\"")
 
-    fun getPackageOfType(node: CSTNode): String {
+    fun getPackageNameOfType(node: CSTNode): String {
         if (node.name != "ClassDeclaration" && node.name != "InterfaceDeclaration") {
             throw TriedToGetPackageOfNonType(node.name)
         }
@@ -141,7 +141,7 @@ class PackageManager(
             throw PackageManagerError("Expected currentClass and otherClass to be ClassDeclarations")
         }
 
-        val isInSamePackage = getPackageOfType(currentClass) == getPackageOfType(otherClass)
+        val isInSamePackage = getPackageNameOfType(currentClass) == getPackageNameOfType(otherClass)
 
         return isSubClass(currentClass, otherClass) || isInSamePackage
     }
@@ -423,6 +423,23 @@ class PackageManager(
             }
         } else if (typeOfB.type.name == "NULL") {
             return typeOfA.isReference()
+        }
+
+        return false
+    }
+
+    fun isString(typeOfNode: Type): Boolean {
+
+        if (typeOfNode.isArray) {
+            return false
+        }
+
+        if (!typeOfNode.isReference()) {
+            return false
+        }
+
+        if ("java.lang" == getPackageNameOfType(typeOfNode.type)) {
+            return true
         }
 
         return false

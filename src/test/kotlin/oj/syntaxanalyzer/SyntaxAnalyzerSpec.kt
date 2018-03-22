@@ -69,8 +69,9 @@ object SyntaxAnalyzerSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNo
                 packages[packageName] = pkg
             })
 
-            NameResolver.resolveNames(PackageManager(packages))
-            SyntaxAnalyzer.analyze(packages)
+            val packageManager = PackageManager(packages)
+            NameResolver.resolveNames(packageManager)
+            SyntaxAnalyzer.analyze(packageManager)
             return packages
         }
     }

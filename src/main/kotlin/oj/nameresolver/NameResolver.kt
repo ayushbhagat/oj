@@ -1199,7 +1199,7 @@ class NameResolutionVisitor(
 
         if ("protected" in getModifiers(selectedConstructorDeclaration)) {
             val currentClassDeclaration = getCurrentClassDeclaration()
-            val isConstructorInSamePackage = packageManager.getPackageOfType(classBeingInstantiated) == packageManager.getPackageOfType(currentClassDeclaration)
+            val isConstructorInSamePackage = packageManager.getPackageNameOfType(classBeingInstantiated) == packageManager.getPackageNameOfType(currentClassDeclaration)
 
             if (!isConstructorInSamePackage) {
                 val currentClassDeclarationName = getDeclarationName(currentClassDeclaration)

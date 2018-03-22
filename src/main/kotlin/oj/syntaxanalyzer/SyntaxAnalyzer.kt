@@ -1,12 +1,12 @@
 package oj.syntaxanalyzer
 
-import oj.models.CSTNode
+import oj.models.PackageManager
 
 class SyntaxAnalyzer {
     companion object {
-        fun analyze(packages: Map<String, List<CSTNode>>) {
-            val deadCodeDetector = DeadCodeDetector(packages)
-            packages.forEach({(_, compilationUnits) ->
+        fun analyze(packageManager: PackageManager) {
+            val deadCodeDetector = DeadCodeDetector(packageManager)
+            packageManager.packages.forEach({(_, compilationUnits) ->
                 compilationUnits.forEach({ compilationUnit ->
                     deadCodeDetector.visit(compilationUnit)
                 })

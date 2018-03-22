@@ -110,7 +110,7 @@ fun main(args: Array<String>) {
 
         val packageManager = PackageManager(packages)
         NameResolver.resolveNames(packageManager)
-        SyntaxAnalyzer.analyze(packages)
+        SyntaxAnalyzer.analyze(packageManager)
 
     } catch (e: Exception) {
         e.printStackTrace()

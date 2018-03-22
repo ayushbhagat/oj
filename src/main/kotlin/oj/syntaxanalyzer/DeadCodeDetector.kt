@@ -2,6 +2,7 @@ package oj.syntaxanalyzer
 
 import oj.models.CSTNode
 import oj.models.CSTNodeVisitor
+import oj.models.PackageManager
 import oj.models.getDeclarationName
 
 class DeadCodeDetectorException(reason: String): Exception(reason)
@@ -156,41 +157,9 @@ fun evalInt(node: CSTNode): Int {
     }
 }
 
-class DeadCodeDetector(val packages: Map<String, List<CSTNode>>) : CSTNodeVisitor() {
+class DeadCodeDetector(val packageManager: PackageManager) : CSTNodeVisitor() {
     enum class Answer {
         No, Maybe
-    }
-
-    fun getPackageNameOfType(node: CSTNode): String {
-        if (node.name != "ClassDeclaration" && node.name != "InterfaceDeclaration") {
-            throw Exception("Tried to call getNameOfType on invalid CSTNode: ${node.name}")
-        }
-
-        for ((packageName, compilationUnits) in packages) {
-            if (compilationUnits.contains(node)) {
-                return packageName
-            }
-        }
-
-        throw Exception("Couldn't find the package that contains type: ${getDeclarationName(node)}")
-    }
-
-    fun isString(node: CSTNode): Boolean {
-        val typeOfNode = node.getType()
-
-        if (typeOfNode.isArray) {
-            return false
-        }
-
-        if (!typeOfNode.isReference()) {
-            return false
-        }
-
-        if ("java.lang" == getPackageNameOfType(typeOfNode.type)) {
-            return true
-        }
-
-        return false
     }
 
     fun evalString(node: CSTNode): String {
@@ -265,15 +234,15 @@ class DeadCodeDetector(val packages: Map<String, List<CSTNode>>) : CSTNodeVisito
                     val typeOfAdditiveExpression = additiveExpression.getType()
                     val typeOfMultiplicativeExpression = multiplicativeExpression.getType()
 
-                    if (typeOfAdditiveExpression.isNumeric() && isString(multiplicativeExpression)) {
+                    if (typeOfAdditiveExpression.isNumeric() && packageManager.isString(typeOfMultiplicativeExpression)) {
                         return evalInt(additiveExpression).toString() + evalString(multiplicativeExpression)
                     }
 
-                    if (isString(additiveExpression) && typeOfMultiplicativeExpression.isNumeric() ) {
+                    if (packageManager.isString(typeOfAdditiveExpression) && typeOfMultiplicativeExpression.isNumeric() ) {
                         return evalString(additiveExpression) + evalInt(multiplicativeExpression)
                     }
 
-                    if (isString(additiveExpression) && isString(multiplicativeExpression)) {
+                    if (packageManager.isString(typeOfAdditiveExpression) && packageManager.isString(typeOfMultiplicativeExpression)) {
                         return evalString(additiveExpression) + evalString(multiplicativeExpression)
                     }
                 }
@@ -331,9 +300,9 @@ class DeadCodeDetector(val packages: Map<String, List<CSTNode>>) : CSTNodeVisito
             }
 
             "CastExpression" -> {
-                if (isString(node)) {
+                if (packageManager.isString(node.getType())) {
                     val unaryExpressionNotPlusMinus = node.getChild("UnaryExpressionNotPlusMinus")
-                    if (isString(unaryExpressionNotPlusMinus)) {
+                    if (packageManager.isString(unaryExpressionNotPlusMinus.getType())) {
                         return evalString(unaryExpressionNotPlusMinus)
                     }
                 }
@@ -417,7 +386,7 @@ class DeadCodeDetector(val packages: Map<String, List<CSTNode>>) : CSTNodeVisito
                     return evalBool(node.getChild("EqualityExpression")) != evalBool(node.getChild("RelationalExpression"))
                 }
 
-                if (isString(equalityExpression) && isString(relationalExpression)) {
+                if (packageManager.isString(typeOfEqualityExpression) && packageManager.isString(typeOfRelationalExpression)) {
                     if (node.children[1].name == "==") {
                         return evalString(node.getChild("EqualityExpression")) == evalString(node.getChild("RelationalExpression"))
                     }
