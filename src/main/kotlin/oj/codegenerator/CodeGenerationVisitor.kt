@@ -15,15 +15,15 @@ class CodeGenerationVisitor(
         return code
     }
 
-    fun writeComment(comment: String) {
-        writeLn(";; $comment")
+    fun writeComment(comment: String = "") {
+        writeLn(";; $comment".trim())
     }
 
-    fun writeLn(line: String) {
+    fun writeLn(line: String = "") {
         write(if (line.isNotEmpty()) "$line\n" else "\n")
     }
 
-    fun write(line: String) {
+    fun write(line: String = "") {
         val indentString =
             if (line == "\n" || line.isEmpty()) "" else {
                 IntRange(0, indent - 1).map({ '\t' }).joinToString(".")
@@ -45,6 +45,8 @@ class CodeGenerationVisitor(
         super.visitClassDeclaration(node)
 
         writeComment("Inside class ${getDeclarationName(node)}")
+
+
     }
 
     override fun visitInterfaceDeclaration(node: CSTNode) {

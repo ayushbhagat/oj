@@ -21,8 +21,8 @@ class CodeGenerator {
 
                     val qualifiedName = packageManager.getQualifiedDeclarationName(typeDeclaration)
 
-                    File("./gen/asm").mkdir()
-                    File("./gen/asm/$qualifiedName.s").printWriter().use({ it.print(code) })
+                    File("./output").mkdir()
+                    File("./output/$qualifiedName.s").printWriter().use({ it.print(code) })
 
                 })
             })
