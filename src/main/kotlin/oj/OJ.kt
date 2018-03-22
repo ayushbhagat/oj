@@ -6,6 +6,7 @@ import oj.nameresolver.NameResolver
 import oj.scanner.BASE_DFA_NAMES
 import oj.scanner.SCANNER_DFA
 import oj.scanner.Scanner
+import oj.syntaxanalyzer.SyntaxAnalyzer
 import oj.weeder.Weeder
 import java.io.File
 
@@ -19,22 +20,22 @@ fun main(args: Array<String>) {
 
     val filenames = args.toList()
 //    val filenames = listOf(
-//        "./test/marmoset/a3/J1_forwardfield1.java",
-//        "./test/marmoset/stdlib/3.0/java/io/OutputStream.java",
-//        "./test/marmoset/stdlib/3.0/java/io/PrintStream.java",
-//        "./test/marmoset/stdlib/3.0/java/io/Serializable.java",
-//        "./test/marmoset/stdlib/3.0/java/lang/Boolean.java",
-//        "./test/marmoset/stdlib/3.0/java/lang/Byte.java",
-//        "./test/marmoset/stdlib/3.0/java/lang/Character.java",
-//        "./test/marmoset/stdlib/3.0/java/lang/Class.java",
-//        "./test/marmoset/stdlib/3.0/java/lang/Cloneable.java",
-//        "./test/marmoset/stdlib/3.0/java/lang/Integer.java",
-//        "./test/marmoset/stdlib/3.0/java/lang/Number.java",
-//        "./test/marmoset/stdlib/3.0/java/lang/Object.java",
-//        "./test/marmoset/stdlib/3.0/java/lang/Short.java",
-//        "./test/marmoset/stdlib/3.0/java/lang/String.java",
-//        "./test/marmoset/stdlib/3.0/java/lang/System.java",
-//        "./test/marmoset/stdlib/3.0/java/util/Arrays.java"
+//        "./test/marmoset/stdlib/4.0/java/io/OutputStream.java",
+//        "./test/marmoset/stdlib/4.0/java/io/PrintStream.java",
+//        "./test/marmoset/stdlib/4.0/java/io/Serializable.java",
+//        "./test/marmoset/stdlib/4.0/java/lang/Boolean.java",
+//        "./test/marmoset/stdlib/4.0/java/lang/Byte.java",
+//        "./test/marmoset/stdlib/4.0/java/lang/Character.java",
+//        "./test/marmoset/stdlib/4.0/java/lang/Class.java",
+//        "./test/marmoset/stdlib/4.0/java/lang/Cloneable.java",
+//        "./test/marmoset/stdlib/4.0/java/lang/Integer.java",
+//        "./test/marmoset/stdlib/4.0/java/lang/Number.java",
+//        "./test/marmoset/stdlib/4.0/java/lang/Object.java",
+//        "./test/marmoset/stdlib/4.0/java/lang/Short.java",
+//        "./test/marmoset/stdlib/4.0/java/lang/String.java",
+//        "./test/marmoset/stdlib/4.0/java/lang/System.java",
+//        "./test/marmoset/stdlib/4.0/java/util/Arrays.java",
+//        "./test/marmoset/a4/J1_7_Reachability_WhileTrue_ConstantFolding.java"
 //    )
 
     try {
@@ -107,7 +108,7 @@ fun main(args: Array<String>) {
         })
 
         NameResolver.resolveNames(packages)
-
+        SyntaxAnalyzer.analyze(packages)
 
     } catch (e: Exception) {
         e.printStackTrace()

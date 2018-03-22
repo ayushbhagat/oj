@@ -43,6 +43,8 @@ class NameResolutionVisitor(
     private var currentFieldDeclaration: CSTNode? = null
     private var currentMethodDeclaration: CSTNode? = null
     private var currentLeftHandSide: CSTNode? = null
+    private var currentLocalVariableDeclaration: CSTNode? = null
+    private var isCurrentLocalVariableDeclarationInitialized: Boolean = false
 
     fun attachImportOnDemandEnvironment(declarations: Environment) {
         importOnDemandDeclarationEnvironment = declarations
@@ -187,13 +189,11 @@ class NameResolutionVisitor(
                 } else {
                     val baseSuperClass = getClassFromIODEnvironment("Object")
 
-                    if (currentClassToInspect === baseSuperClass) {
+                    if (baseSuperClass == null || currentClassToInspect === baseSuperClass) {
                         break
                     }
 
-                    if (baseSuperClass != null) {
-                        currentClassToInspect = baseSuperClass
-                    }
+                    currentClassToInspect = baseSuperClass
                 }
             }
 
@@ -255,13 +255,11 @@ class NameResolutionVisitor(
             } else {
                 val baseSuperClass = getClassFromIODEnvironment("Object")
 
-                if (currentClassToInspect === baseSuperClass) {
+                if (baseSuperClass == null || currentClassToInspect === baseSuperClass) {
                     break
                 }
 
-                if (baseSuperClass != null) {
-                    currentClassToInspect = baseSuperClass
-                }
+                currentClassToInspect = baseSuperClass
             }
         }
 
@@ -527,16 +525,48 @@ class NameResolutionVisitor(
         }
     }
 
+    fun validateUsageOfLocalVariableDeclaration(localVariableDeclaration: CSTNode) {
+        if (getCurrentLocalVariableDeclaration() != null) {
+            val currentLocalVariableDeclaration = getCurrentLocalVariableDeclaration()!!
+            val currentLocalVariableDeclarationName = getDeclarationName(currentLocalVariableDeclaration)
+
+            if (getCurrentLeftHandSide() != null) {
+                val currentLeftHandSide = getCurrentLeftHandSide()!!
+
+                if (currentLeftHandSide.children[0].name == "Name") {
+                    val nameNode = currentLeftHandSide.getChild("Name")
+                    val identifiers = nameNode.getDescendants("IDENTIFIER").map({ it.lexeme })
+
+                    if (identifiers.size == 1) {
+                        if (identifiers[0] == currentLocalVariableDeclarationName) {
+                            isCurrentLocalVariableDeclarationInitialized = true
+                        }
+                    }
+                }
+            }
+
+            if (!isCurrentLocalVariableDeclarationInitialized && getDeclarationName(localVariableDeclaration) == currentLocalVariableDeclarationName) {
+                throw NameResolutionError("Local variable \"${currentLocalVariableDeclarationName}\" used to initialize itself")
+            }
+
+        }
+    }
+
     fun resolveExpressionName(nameNode: CSTNode) {
         val name = nameNode.getDescendants("IDENTIFIER").map({ it.lexeme })
         if (name.size == 1) {
             val expressionName = name[0]
+
             // Ensure that the expression name is defined. If so, add it to the name resolution, otherwise throw error.
             val declarationNode = environment.find(expressionName)
             addNameResolution(nameNode, declarationNode)
 
             if (declarationNode.name == "FieldDeclaration") {
                 validateUsageOfFieldDeclaration(declarationNode)
+            }
+
+            if (declarationNode.name == "LocalVariableDeclaration") {
+                validateUsageOfLocalVariableDeclaration(declarationNode)
             }
 
             nameNode.setType(getDeclarationType(declarationNode))
@@ -804,27 +834,27 @@ class NameResolutionVisitor(
 
         ownMethodDeclarations.forEach({ methodDeclaration ->
             val methodHeader = methodDeclaration.getChild("MethodHeader")
-            environment.pushScope()
-            this.visit(methodHeader)
-            environment.popScope()
+            environment.withNewScope({
+                this.visit(methodHeader)
+            })
         })
 
         val ownFieldDeclarations = classBody.getDescendants("FieldDeclaration")
 
         ownFieldDeclarations.forEach({ fieldDeclaration ->
             val type = fieldDeclaration.getChild("Type")
-            environment.pushScope()
-            this.visit(type)
-            environment.popScope()
+            environment.withNewScope({
+                this.visit(type)
+            })
         })
 
         val constructorDeclarations = node.getDescendants("ConstructorDeclaration")
 
         constructorDeclarations.forEach({ constructorDeclaration ->
             val constructorDeclarator = constructorDeclaration.getChild("ConstructorDeclarator")
-            environment.pushScope()
-            this.visit(constructorDeclarator)
-            environment.popScope()
+            environment.withNewScope({
+                this.visit(constructorDeclarator)
+            })
         })
 
         if (resolutionDepth == ResolutionDepth.MemberDeclaration) {
@@ -1009,12 +1039,6 @@ class NameResolutionVisitor(
                 }).isEmpty()
             })
 
-//            val concreteMethodsNotUsedToImplementAbstractMethods = concreteMethods.filter({ concreteMethod ->
-//                abstractMethods.filter({ abstractMethod ->
-//                    canMethodsReplaceOneAnother(abstractMethod.getChild("MethodHeader"), concreteMethod.getChild("MethodHeader"))
-//                }).isEmpty()
-//            })
-
             if (abstractMethodsThatArentConcretelyImplemented.isNotEmpty()) {
                 return false
             }
@@ -1065,12 +1089,6 @@ class NameResolutionVisitor(
 
                 return finalUnimplementedAbstractInterfaceMethods.isEmpty()
             } else {
-//                val remainingConcreteMethods = concreteMethods.filter({ concreteMethod ->
-//                    unshadowedPotentiallyUnimplementedInterfaceMethods.filter({ unimplementedInterfaceMethod ->
-//                        canMethodsReplaceOneAnother(concreteMethod.getChild("MethodHeader"), unimplementedInterfaceMethod.getChild("MethodHeader"))
-//                    }).isEmpty()
-//                })
-
                 val superClassDeclaration = superNames[0].getDeclaration()
                 return areInterfaceMethodsImplemented(superClassDeclaration, concreteMethods, remainingUnimplementedAbstractInterfaceMethods)
             }
@@ -1196,13 +1214,13 @@ class NameResolutionVisitor(
                 return
             }
 
-            environment.pushScope()
-            if (methodDeclaration.name == "MethodDeclaration") {
-                val methodName = getDeclarationName(methodDeclaration)
-                environment.push(methodName, methodDeclaration)
-            }
-            this.visit(methodDeclaration)
-            environment.popScope()
+            environment.withNewScope({
+                if (methodDeclaration.name == "MethodDeclaration") {
+                    val methodName = getDeclarationName(methodDeclaration)
+                    environment.push(methodName, methodDeclaration)
+                }
+                this.visit(methodDeclaration)
+            })
         }
 
         /**
@@ -1255,9 +1273,9 @@ class NameResolutionVisitor(
 
         abstractMethodDeclarations.forEach({ abstractMethodDeclaration ->
             val methodHeader = abstractMethodDeclaration.getChild("MethodHeader")
-            environment.pushScope()
-            this.visit(methodHeader)
-            environment.popScope()
+            environment.withNewScope({
+                this.visit(methodHeader)
+            })
         })
 
         if (resolutionDepth == ResolutionDepth.MemberDeclaration) {
@@ -1451,9 +1469,9 @@ class NameResolutionVisitor(
     }
 
     override fun visitBlock(node: CSTNode) {
-        environment.pushScope()
-        super.visitBlock(node)
-        environment.popScope()
+        environment.withNewScope({
+            super.visitBlock(node)
+        })
     }
 
 
@@ -1484,6 +1502,8 @@ class NameResolutionVisitor(
      * As the type of a local variable (§14.4)
      */
     override fun visitLocalVariableDeclaration(node: CSTNode) {
+        currentLocalVariableDeclaration = node
+        isCurrentLocalVariableDeclarationInitialized = false
         val variableDeclaratorNode = node.getChild("VariableDeclarator")
         val variableName = variableDeclaratorNode.getChild("IDENTIFIER").lexeme
 
@@ -1501,6 +1521,13 @@ class NameResolutionVisitor(
         if (!colonEquals(localVariableType, expressionType)) {
             throw TypeCheckingError("LocalVariableDeclaration initializer is not type assignable to the variable type.")
         }
+
+        isCurrentLocalVariableDeclarationInitialized = false
+        currentLocalVariableDeclaration = null
+    }
+
+    fun getCurrentLocalVariableDeclaration(): CSTNode? {
+        return currentLocalVariableDeclaration
     }
 
     /**
@@ -2254,9 +2281,20 @@ class NameResolutionVisitor(
         super.visitReturnStatement(node)
 
         val currentMethodDeclaration = getCurrentMethodDeclaration()
-        val currentMethodReturnType = getDeclarationType(currentMethodDeclaration!!)
-
         val expressionOpt = node.getChild("ExpressionOpt")
+
+        /**
+         * Constructors can also have returns.
+         */
+        if (currentMethodDeclaration == null) {
+            if (expressionOpt.children.size != 0) {
+                throw TypeCheckingError("Tried to return something from a constructor of ${getDeclarationName(getCurrentClassDeclaration())}.")
+            }
+
+            return
+        }
+
+        val currentMethodReturnType = getDeclarationType(currentMethodDeclaration)
 
         if (currentMethodReturnType.type.name == "void") {
             if (expressionOpt.children.size != 0) {
@@ -2492,38 +2530,38 @@ class NameResolver {
                             })
 
                         visitor.attachImportOnDemandEnvironment(iodEnvironment)
-                        globalEnvironment.pushScope()
 
-                        getTypesDeclaredInPackage(packageName)
-                            .forEach({(typeName, typeDeclaration) ->
-                                globalEnvironment.push(typeName, typeDeclaration)
-                            })
+                        globalEnvironment.withNewScope({
+                            getTypesDeclaredInPackage(packageName)
+                                .forEach({(typeName, typeDeclaration) ->
+                                    globalEnvironment.push(typeName, typeDeclaration)
+                                })
 
-                        // TODO: Output error when a single type import declaration makes available a type that we have available locally
-                        compilationUnit
-                            .getDescendants("SingleTypeImportDeclaration")
-                            .forEach({ stiDeclaration ->
-                                val name = stiDeclaration.getDescendants("IDENTIFIER").map({ it.lexeme })
-                                val stiPackageName = name.subList(0, name.size - 1).joinToString(".")
-                                val typeName = name.last()
+                            // TODO: Output error when a single type import declaration makes available a type that we have available locally
+                            compilationUnit
+                                .getDescendants("SingleTypeImportDeclaration")
+                                .forEach({ stiDeclaration ->
+                                    val name = stiDeclaration.getDescendants("IDENTIFIER").map({ it.lexeme })
+                                    val stiPackageName = name.subList(0, name.size - 1).joinToString(".")
+                                    val typeName = name.last()
 
-                                if (!doesPackageExist(stiPackageName)) {
-                                    throw SingleTypeImportDeclarationDetectedForNonExistentPackage(stiPackageName)
-                                }
+                                    if (!doesPackageExist(stiPackageName)) {
+                                        throw SingleTypeImportDeclarationDetectedForNonExistentPackage(stiPackageName)
+                                    }
 
-                                val typesInPackage = getTypesDeclaredInPackage(stiPackageName)
+                                    val typesInPackage = getTypesDeclaredInPackage(stiPackageName)
 
-                                if (!typesInPackage.contains(typeName)) {
-                                    throw SingleTypeImportDeclarationDetectedForNonExistentType(stiPackageName, typeName)
-                                }
+                                    if (!typesInPackage.contains(typeName)) {
+                                        throw SingleTypeImportDeclarationDetectedForNonExistentType(stiPackageName, typeName)
+                                    }
 
-                                globalEnvironment.push(typeName, typesInPackage[typeName]!!)
-                            })
+                                    globalEnvironment.push(typeName, typesInPackage[typeName]!!)
+                                })
 
-                        visitor.setResolutionDepth(resolutionDepth)
-                        visitor.visit(compilationUnit)
+                            visitor.setResolutionDepth(resolutionDepth)
+                            visitor.visit(compilationUnit)
+                        })
 
-                        globalEnvironment.popScope()
                         visitor.detachImportOnDemandEnvironment()
                     })
                 })

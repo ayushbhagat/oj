@@ -10,7 +10,7 @@ import kotlin.concurrent.thread
 const val MARMOSET_DIR = "./test/marmoset"
 
 fun main(args: Array<String>) {
-    val assignment = "a3"
+    val assignment = "a4"
     val stdlibVersion = when (assignment) {
         "a2" -> "2.0"
         "a3" -> "3.0"
@@ -70,11 +70,12 @@ fun main(args: Array<String>) {
         }
     })
 
+    val formatLength = "${tests.size - 1}".length
 
     tests.zip(IntRange(0, tests.size - 1)).forEach({(testFile, testNum) ->
         testsDone[testNum].acquire()
 
-        val testResultPrefix = "[${format(testNum)}/${format(tests.size - 1)}]"
+        val testResultPrefix = "[${format(testNum, formatLength)}/${format(tests.size - 1, formatLength)}]"
         if (testsPassed[testNum]) {
             System.out.println("$testResultPrefix PASS: $testFile")
         } else {
@@ -90,7 +91,7 @@ fun main(args: Array<String>) {
     val numTestsPassed = testsPassed.filter({ it }).size
 
     println()
-    println("Tests passed: ${format(numTestsPassed)}/${format(tests.size)}")
+    println("Tests passed: ${format(numTestsPassed, formatLength)}/${format(tests.size, formatLength)}")
 }
 
 fun EmptySemaphore(n: Int): Semaphore {

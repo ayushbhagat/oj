@@ -588,7 +588,7 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
         }
 
         it("should not be able to access instance fields in static method") {
-            assertFailsWith(Environment.LookupFailed::class, {
+            assertFailsWith(NameResolutionError::class, {
                 subject(listOf(
                     """
             public class A {
@@ -798,7 +798,7 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
                 """
             public class A extends B {
                 public A() {
-                    test();
+                    A.test();
                 }
             }
             """,
@@ -813,19 +813,19 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
         }
 
         it("should not be able to access instance methods in static method") {
-            assertFailsWith(Environment.LookupFailed::class, {
+            assertFailsWith(NameResolutionError::class, {
                 subject(listOf(
                     """
-            public class A {
-                public A() {}
+                    public class A {
+                        public A() {}
 
-                public void b() {}
+                        public void b() {}
 
-                public static void staticMethod() {
-                    b();
-                }
-            }
-            """
+                        public static void staticMethod() {
+                            b();
+                        }
+                    }
+                    """
                 ))
             })
         }
@@ -837,7 +837,7 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
                     public A() {}
 
                     public void b() {
-                        staticMethod();
+                        A.staticMethod();
                     }
 
                     public static void staticMethod() {}
@@ -1598,4 +1598,36 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
             ))
         })
     }
+
+    it("should reject not reject field use in its initializer when it's an assignment") {
+        subject(listOf("""
+            public class A {
+                public int a = (a = 1) + 1;
+                public A() {}
+            }
+        """.trimIndent()))
+    }
+
+    it("should reject field use in its initializer") {
+        assertFailsWith(NameResolutionError::class, {
+            subject(listOf("""
+                public class A {
+                    public int a = a + 1;
+                    public A() {}
+                }
+            """.trimIndent()))
+        })
+    }
+
+    it("should reject field use in its initializer even after it's been initialized") {
+        assertFailsWith(NameResolutionError::class, {
+            subject(listOf("""
+                public class A {
+                    public int a = (a = 1) + a;
+                    public A() {}
+                }
+            """.trimIndent()))
+        })
+    }
+
 })
