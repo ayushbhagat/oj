@@ -2,6 +2,7 @@ package oj.syntaxanalyzer
 
 import oj.models.CSTNode
 import oj.models.NFA
+import oj.models.PackageManager
 import oj.nameresolver.NameResolutionError
 import oj.nameresolver.NameResolver
 import oj.parser.CFGStateDataHelper
@@ -68,8 +69,9 @@ object SyntaxAnalyzerSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNo
                 packages[packageName] = pkg
             })
 
-            NameResolver.resolveNames(packages)
-            SyntaxAnalyzer.analyze(packages)
+            val packageManager = PackageManager(packages)
+            NameResolver.resolveNames(packageManager)
+            SyntaxAnalyzer.analyze(packageManager)
             return packages
         }
     }

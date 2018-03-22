@@ -2,6 +2,7 @@ package oj.nameresolver
 
 import oj.models.CSTNode
 import oj.models.NFA
+import oj.models.PackageManager
 import oj.parser.CFGStateDataHelper
 import oj.parser.Parser
 import oj.scanner.BASE_DFA_NAMES
@@ -66,7 +67,9 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
                 packages[packageName] = pkg
             })
 
-            NameResolver.resolveNames(packages)
+
+
+            NameResolver.resolveNames(PackageManager(packages))
             return packages
         }
     }
@@ -165,7 +168,7 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
 
 
         it("should not allow importing 2 classes with the same canonical name") {
-            assertFailsWith(DetectedTwoTypesWithSameNameInSamePackage::class, {
+            assertFailsWith(PackageManager.DetectedTwoTypesWithSameNameInSamePackage::class, {
                 subject(listOf(
                     """
             package test;
@@ -1213,7 +1216,7 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
     }
 
     it("should not allow cycles in the interface hierarchy") {
-        assertFailsWith(InterfaceHierarchyIsCyclic::class, {
+        assertFailsWith(PackageManager.InterfaceHierarchyIsCyclic::class, {
             subject(listOf(
                 """
                     public interface A extends B {
@@ -1235,7 +1238,7 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
     }
 
     it("should not allow an interface to extend itself") {
-        assertFailsWith(InterfaceHierarchyIsCyclic::class, {
+        assertFailsWith(PackageManager.InterfaceHierarchyIsCyclic::class, {
             subject(listOf(
                 """
                     public interface A extends A {

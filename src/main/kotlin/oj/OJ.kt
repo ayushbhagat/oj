@@ -2,6 +2,7 @@ import oj.models.CSTNode
 import oj.parser.CFGStateDataHelper
 import oj.parser.Parser
 import oj.models.NFA
+import oj.models.PackageManager
 import oj.nameresolver.NameResolver
 import oj.scanner.BASE_DFA_NAMES
 import oj.scanner.SCANNER_DFA
@@ -107,8 +108,9 @@ fun main(args: Array<String>) {
             packages[packageName] = pkg
         })
 
-        NameResolver.resolveNames(packages)
-        SyntaxAnalyzer.analyze(packages)
+        val packageManager = PackageManager(packages)
+        NameResolver.resolveNames(packageManager)
+        SyntaxAnalyzer.analyze(packageManager)
 
     } catch (e: Exception) {
         e.printStackTrace()
