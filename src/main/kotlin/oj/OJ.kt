@@ -1,3 +1,4 @@
+import oj.codegenerator.CodeGenerator
 import oj.models.CSTNode
 import oj.parser.CFGStateDataHelper
 import oj.parser.Parser
@@ -111,6 +112,7 @@ fun main(args: Array<String>) {
         val packageManager = PackageManager(packages)
         NameResolver.resolveNames(packageManager)
         SyntaxAnalyzer.analyze(packageManager)
+        CodeGenerator.generateCode(packageManager)
 
     } catch (e: Exception) {
         e.printStackTrace()

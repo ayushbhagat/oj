@@ -445,4 +445,16 @@ class PackageManager(
         return false
     }
 
+    fun getQualifiedDeclarationName(node: CSTNode): String {
+        if (node.name !in setOf("ClassDeclaration", "InterfaceDeclaration")) {
+            throw PackageManagerError("Tried to get qualified name of yet unsupported CSTNode type ${node.name}")
+        }
+
+        val packageName = getPackageNameOfType(node)
+        val typeName = getDeclarationName(node)
+
+        return if (packageName.isEmpty()) typeName else "$packageName.$typeName"
+
+    }
+
 }
