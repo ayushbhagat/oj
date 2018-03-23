@@ -1,5 +1,6 @@
 package oj.models
 
+import oj.nameresolver.NameResolutionVisitor
 import java.util.*
 
 open class CSTNodeError(reason: String): Exception(reason)
@@ -10,6 +11,13 @@ class FoundManyChildren: CSTNodeError("Found many descendants, expected 1.")
 class FoundNoDescendant : CSTNodeError("Found no descendants, expected 1.")
 class FoundManyDescendants: CSTNodeError("Found many descendants, expected 1.")
 
+enum class NameNodeReclassification {
+    Package,
+    Type,
+    Expression,
+    Method
+}
+
 class CSTNode(
     val name: String,
     val lexeme: String = "",
@@ -19,6 +27,23 @@ class CSTNode(
         private val declarations: MutableMap<CSTNode, CSTNode> = mutableMapOf()
         private val types: MutableMap<CSTNode, Type> = mutableMapOf()
         private val downCast: MutableSet<CSTNode> = mutableSetOf()
+        private val nameNodeReclassifications: MutableMap<CSTNode, NameNodeReclassification> = mutableMapOf()
+    }
+
+    fun setNameNodeClassification(classification: NameNodeReclassification) {
+        if (name != "Name") {
+            throw CSTNodeError("Tried to set name node classification from non-name \"$name\" node.")
+        }
+
+        nameNodeReclassifications[this] = classification
+    }
+
+    fun getNameNodeClassification(): NameNodeReclassification? {
+        if (name != "Name") {
+            throw CSTNodeError("Tried to get name node classification from non-name \"$name\" node.")
+        }
+
+        return nameNodeReclassifications[this]
     }
 
     // TODO: Two names that are value equal will resolve to the same declaration. This is incorrect. Fix.
@@ -37,7 +62,13 @@ class CSTNode(
 
         val declaration = CSTNode.declarations[this]
         if (declaration == null) {
-            throw CSTNodeError("\"$name\" node doesn't have a declaration assigned to it.")
+            val serializedName =
+                if (name == "Name")
+                    serializeName(this)
+                else
+                    lexeme
+
+            throw CSTNodeError("\"$serializedName\" \"$name\" node doesn't have a declaration assigned to it.")
         }
 
         return declaration

@@ -1633,4 +1633,47 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
         })
     }
 
+    it("should reject programs where package names are qualified types") {
+        assertFailsWith(EitherPackageNameOrQualifiedType::class, {
+            subject(listOf(
+                """
+                package A.B;
+
+                public class C {
+                    public C() {}
+                }
+
+                """.trimIndent(),
+                """
+                package A;
+
+                public class B {
+                    public B() {}
+                }
+
+                """.trimIndent()))
+        })
+    }
+
+    it("should reject programs where prefixes of package names are qualified types") {
+        assertFailsWith(EitherPackageNameOrQualifiedType::class, {
+            subject(listOf(
+                """
+                package A.B.D;
+
+                public class C {
+                    public C() {}
+                }
+
+                """.trimIndent(),
+                """
+                package A;
+
+                public class B {
+                    public B() {}
+                }
+
+                """.trimIndent()))
+        })
+    }
 })

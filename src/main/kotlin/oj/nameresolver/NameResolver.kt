@@ -80,6 +80,8 @@ class NameResolutionVisitor(
     }
 
     fun resolveTypeName(nameNode: CSTNode) {
+        nameNode.setNameNodeClassification(NameNodeReclassification.Type)
+
         when (nameNode.children[0].name) {
             "SimpleName" -> {
                 val simpleName = nameNode.getChild("SimpleName")
@@ -141,7 +143,9 @@ class NameResolutionVisitor(
                     val prefix = packageNameIdentifiers.subList(0, i + 1)
 
                     if (prefix.size == 1) {
-                        if (environment.contains(prefix[0]) || importOnDemandDeclarationEnvironment.contains(prefix[0])) {
+                        val typeDeclaration = findTypeDeclarationByName(prefix[0])
+
+                        if (typeDeclaration != null) {
                             val serializedQualifiedName = serializeName(nameNode)
                             throw NameResolutionError(
                                 "Prefix \"${prefix[0]}\" of qualified type \"$serializedQualifiedName\" is a type"
@@ -269,6 +273,8 @@ class NameResolutionVisitor(
     }
 
     fun resolveExpressionName(nameNode: CSTNode) {
+        nameNode.setNameNodeClassification(NameNodeReclassification.Expression)
+
         when (nameNode.children[0].name) {
             "SimpleName" -> {
                 val simpleName = nameNode.getChild("SimpleName")
@@ -292,10 +298,10 @@ class NameResolutionVisitor(
                 val qualifiedName = nameNode.getChild("QualifiedName")
                 val ambiguousPrefixName = qualifiedName.getChild("Name")
                 val identifier = qualifiedName.getChild("IDENTIFIER").lexeme
-                val ambiguousPrefixReclassification = resolveAmbiguousName(ambiguousPrefixName)
+                resolveAmbiguousName(ambiguousPrefixName)
 
-                when (ambiguousPrefixReclassification) {
-                    ReclassifiedNameType.Package -> {
+                when (ambiguousPrefixName.getNameNodeClassification()) {
+                    NameNodeReclassification.Package -> {
                         val serializedFullName = serializeName(qualifiedName)
                         val packageName = serializeName(ambiguousPrefixName)
                         throw NameResolutionError(
@@ -303,7 +309,7 @@ class NameResolutionVisitor(
                         )
                     }
 
-                    ReclassifiedNameType.Type -> {
+                    NameNodeReclassification.Type -> {
                         val classDeclaration = ambiguousPrefixName.getDeclaration()
                         if (classDeclaration.name != "ClassDeclaration") {
                             throw TriedToAccessStaticMemberOnNonClassDeclaration(classDeclaration.name, getDeclarationName(classDeclaration))
@@ -329,7 +335,7 @@ class NameResolutionVisitor(
                         nameNode.setType(getDeclarationType(fieldDeclaration))
                     }
 
-                    ReclassifiedNameType.Expression -> {
+                    NameNodeReclassification.Expression -> {
                         val typeOfAmbiguousPrefix = ambiguousPrefixName.getType()
 
                         if (typeOfAmbiguousPrefix.isArray) {
@@ -370,18 +376,17 @@ class NameResolutionVisitor(
                             nameNode.setType(getDeclarationType(fieldDeclarationNode))
                         }
                     }
+
+                    NameNodeReclassification.Method -> {
+                        val serializedAmbiguousPrefix = serializeName(ambiguousPrefixName)
+                        throw TypeCheckingError("Ambiguous name \"$serializedAmbiguousPrefix\" illegally resolved to Method.")
+                    }
                 }
             }
         }
     }
 
-    enum class ReclassifiedNameType {
-        Package,
-        Type,
-        Expression
-    }
-
-    fun resolveAmbiguousName(nameNode: CSTNode) : ReclassifiedNameType {
+    fun resolveAmbiguousName(nameNode: CSTNode) {
         when (nameNode.children[0].name) {
             "SimpleName" -> {
                 val simpleName = nameNode.getChild("SimpleName")
@@ -400,7 +405,8 @@ class NameResolutionVisitor(
                     val type = getDeclarationType(declaration)
                     nameNode.setType(type)
 
-                    return ReclassifiedNameType.Expression
+                    nameNode.setNameNodeClassification(NameNodeReclassification.Expression)
+                    return
                 }
 
                 val typeDeclaration = findTypeDeclarationByName(identifier)
@@ -409,21 +415,23 @@ class NameResolutionVisitor(
                     nameNode.setType(type)
                     addNameResolution(nameNode, typeDeclaration)
 
-                    return ReclassifiedNameType.Type
+                    nameNode.setNameNodeClassification(NameNodeReclassification.Type)
+                    return
                 }
 
-                return ReclassifiedNameType.Package
+                nameNode.setNameNodeClassification(NameNodeReclassification.Package)
+                return
             }
 
             else -> {
                 val qualifiedName = nameNode.getChild("QualifiedName")
                 val ambiguousPrefixName = qualifiedName.getChild("Name")
 
-                val ambiguousPrefixReclassification = resolveAmbiguousName(ambiguousPrefixName)
+                resolveAmbiguousName(ambiguousPrefixName)
                 val identifier = qualifiedName.getChild("IDENTIFIER").lexeme
 
-                when (ambiguousPrefixReclassification) {
-                    ReclassifiedNameType.Package -> {
+                when (ambiguousPrefixName.getNameNodeClassification()) {
+                    NameNodeReclassification.Package -> {
                         val packageName = serializeName(ambiguousPrefixName)
 
                         if (
@@ -436,13 +444,15 @@ class NameResolutionVisitor(
                             val type = Type(typeDeclaration, false)
                             nameNode.setType(type)
 
-                            return ReclassifiedNameType.Type
+                            nameNode.setNameNodeClassification(NameNodeReclassification.Type)
+                            return
                         }
 
-                        return ReclassifiedNameType.Package
+                        nameNode.setNameNodeClassification(NameNodeReclassification.Package)
+                        return
                     }
 
-                    ReclassifiedNameType.Type -> {
+                    NameNodeReclassification.Type -> {
                         val classDeclaration = ambiguousPrefixName.getDeclaration()
 
                         if (classDeclaration.name != "ClassDeclaration") {
@@ -464,14 +474,15 @@ class NameResolutionVisitor(
                             val type = getDeclarationType(matchingStaticMemberDeclaration)
                             nameNode.setType(type)
 
-                            return ReclassifiedNameType.Expression
+                            nameNode.setNameNodeClassification(NameNodeReclassification.Expression)
+                            return
                         }
 
                         val qualifiedClassName = serializeName(ambiguousPrefixName)
                         throw NameResolutionError("Prefix \"$qualifiedClassName\" is TypeName, but member \"$identifier\" doesn't exist in the type.")
                     }
 
-                    ReclassifiedNameType.Expression -> {
+                    NameNodeReclassification.Expression -> {
                         val expressionType = ambiguousPrefixName.getType()
                         val currentClass = getCurrentClassDeclaration()
 
@@ -496,7 +507,8 @@ class NameResolutionVisitor(
                                 val type = getDeclarationType(matchingFieldDeclaration)
                                 nameNode.setType(type)
 
-                                return ReclassifiedNameType.Expression
+                                nameNode.setNameNodeClassification(NameNodeReclassification.Expression)
+                                return
                             }
 
                             val expressionTypeName = getDeclarationName(expressionTypeDeclaration)
@@ -507,6 +519,11 @@ class NameResolutionVisitor(
                                     "\"$identifier\" of said type."
                             )
                         }
+                    }
+
+                    NameNodeReclassification.Method -> {
+                        val serializedAmbiguousPrefix = serializeName(ambiguousPrefixName)
+                        throw TypeCheckingError("Ambiguous name \"$serializedAmbiguousPrefix\" illegally resolved to Method.")
                     }
                 }
             }
@@ -1112,18 +1129,17 @@ class NameResolutionVisitor(
         return currentFieldDeclaration
     }
 
+    override fun visitPackageDeclaration(node: CSTNode) {
+        val nameNode = node.getChild("Name")
+        nameNode.setNameNodeClassification(NameNodeReclassification.Package)
+    }
+
     /**
      * TypeName:
      * In a single-type-import declaration (§7.5.1)
      */
     override fun visitSingleTypeImportDeclaration(node: CSTNode) {
-        // TODO: Do we need to do anything for this?
-        val nameNode = node.getChild("Name")
-        val name = nameNode.getDescendants("IDENTIFIER").map({ it.lexeme })
-
-        if (name.size > 1) {
-
-        }
+        // Do nothing
     }
 
     /**
@@ -1583,6 +1599,7 @@ class NameResolutionVisitor(
 
         if (node.children[0].name == "Name") {
             val nameNode = node.getChild("Name")
+            nameNode.setNameNodeClassification(NameNodeReclassification.Method)
 
             if (nameNode.children[0].name == "SimpleName") {
                 val simpleName = nameNode.getChild("SimpleName")
@@ -1619,17 +1636,17 @@ class NameResolutionVisitor(
                 val qualifiedName = nameNode.getChild("QualifiedName")
                 val methodName = qualifiedName.getChild("IDENTIFIER").lexeme
                 val ambiguousPrefixName = qualifiedName.getChild("Name")
-                val ambiguousPrefixResolution = resolveAmbiguousName(ambiguousPrefixName)
+                resolveAmbiguousName(ambiguousPrefixName)
 
                 val serializedAmbiguousPrefix = ambiguousPrefixName.getDescendants("IDENTIFIER").map({ it.lexeme }).joinToString(".")
 
-                when (ambiguousPrefixResolution) {
-                    ReclassifiedNameType.Package -> {
+                when (ambiguousPrefixName.getNameNodeClassification()) {
+                    NameNodeReclassification.Package -> {
                         val packageName = serializedAmbiguousPrefix
                         throw NameResolutionError("Tried to call method \"$methodName\" on package \"$packageName\"")
                     }
 
-                    ReclassifiedNameType.Type -> {
+                    NameNodeReclassification.Type -> {
                         val resolvedType = ambiguousPrefixName.getType()
                         val typeDeclaration = resolvedType.type
                         val currentClass = getCurrentClassDeclaration()
@@ -1659,7 +1676,7 @@ class NameResolutionVisitor(
                         node.setType(getDeclarationType(resolvedStaticMethod))
                     }
 
-                    ReclassifiedNameType.Expression -> {
+                    NameNodeReclassification.Expression -> {
                         val resolvedType = ambiguousPrefixName.getType()
                         val resolvedTypeDeclaration = resolvedType.type
                         val currentClass = getCurrentClassDeclaration()
@@ -1688,6 +1705,10 @@ class NameResolutionVisitor(
 
                         addNameResolution(nameNode, resolvedInstanceMethod)
                         node.setType(getDeclarationType(resolvedInstanceMethod))
+                    }
+
+                    NameNodeReclassification.Method -> {
+                        throw TypeCheckingError("Ambiguous name illegally resolved to MethodName")
                     }
                 }
             }
@@ -1729,7 +1750,8 @@ class NameResolutionVisitor(
      * In a type-import-on-demand declaration (§7.5.2)
      */
     override fun visitTypeImportOnDemandDeclaration(node: CSTNode) {
-        // Don't visit.
+        val nameNode = node.getChild("Name")
+        nameNode.setNameNodeClassification(NameNodeReclassification.Package)
     }
 
     override fun visitType(node: CSTNode) {
