@@ -20,6 +20,8 @@ open class InterfaceExtendsNonInterface(interfaceName: String, nonInterfaceName:
 open class DuplicateMethodsDetectedInInterface(interfaceName: String, methodName: String): HierarchyCheckingError("Detected a duplicate method \"$methodName\" in interface \"$interfaceName\"")
 open class TwoMethodsInInterfaceHierarchyWithSameSignatureButDifferentReturnTypes(interfaceName: String, methodName: String): HierarchyCheckingError("Two methods with the same name, \"$methodName\", but different return type exist in the interface hierarchy (including interface methods) of interface \"$interfaceName\"")
 open class ConcreteMethodImplementsPublicMethodWithProtectedVisibility(className: String, methodName: String) : HierarchyCheckingError("Concrete method \"$className.$methodName\" implements \"public\" method with \"protected\" visibility.")
+open class TriedToAccessStaticMemberOnNonClassDeclaration(nodeType: String, declarationName: String) : NameResolutionError("Tried to access static field or method on type \"$nodeType\" node called \"$declarationName\". Statics are only supported on classes.")
+open class TriedToAccessFieldOfPrimitiveType(expressionName: String, expressionType: String) : NameResolutionError("Tried to access field of \"$expressionName\", which is of primitive type \"$expressionType\"")
 
 val PRIMITIVE_TYPE_NAMES = setOf("byte", "short", "int", "char", "boolean")
 
@@ -61,90 +63,118 @@ class NameResolutionVisitor(
         nameNode.setDeclaration(declaration)
     }
 
+    fun findTypeDeclarationByName(typeName: String): CSTNode? {
+        val globalEnvironmentLookup = environment.findAll({(name, node) -> name == typeName && isClassOrInterfaceDeclaration(node)})
+        if (globalEnvironmentLookup.isNotEmpty()) {
+            return globalEnvironmentLookup.first()
+        }
+
+        val iodLookup = importOnDemandDeclarationEnvironment.findAll({(name, node) -> name == typeName && isClassOrInterfaceDeclaration(node)})
+        if (iodLookup.size == 1) {
+            return iodLookup.first()
+        } else if (iodLookup.size > 1) {
+            throw NameResolutionError("Detected more than one types with name $typeName inside import on demand declaration")
+        }
+
+        return null
+    }
+
     fun resolveTypeName(nameNode: CSTNode) {
-        val name = nameNode.getDescendants("IDENTIFIER").map({ it.lexeme })
+        when (nameNode.children[0].name) {
+            "SimpleName" -> {
+                val simpleName = nameNode.getChild("SimpleName")
+                val typeName = simpleName.getChild("IDENTIFIER").lexeme
+                val typeDeclaration = findTypeDeclarationByName(typeName)
 
-        if (name.size == 1) {
-            val typeName = name[0]
-            val predicate = { entry: Environment.Entry ->
-                entry.name == typeName && isClassOrInterfaceDeclaration(entry.node)
-            }
-
-            if (environment.contains(predicate)) {
-                val typeDeclaration = environment.find(predicate)
-                addNameResolution(nameNode, typeDeclaration)
-                nameNode.setType(Type(typeDeclaration, false))
-            } else {
-                val iodLookup = importOnDemandDeclarationEnvironment.findAll(typeName)
-                if (iodLookup.size == 1) {
-                    addNameResolution(nameNode, iodLookup[0])
-                    nameNode.setType(Type(iodLookup[0], false))
-                } else if (iodLookup.size > 1) {
-                    throw NameResolutionError("TypeName \"$typeName\" maps to types in more than one import on demand declarations")
-                } else {
+                if (typeDeclaration == null) {
                     throw NameResolutionError("TypeName \"$typeName\" doesn't exist.")
                 }
-            }
-        } else {
-            val typeName = name.last()
-            val pkg = name.subList(0, name.size - 1)
-            val packageName = pkg.joinToString(".")
 
-            if (!packageManager.doesPackageExist(packageName)) {
-                throw NameResolutionError("Tried to access type \"$typeName\" in package \"$packageName\", but package \"$packageName\" doesn't exist.")
+                addNameResolution(nameNode, typeDeclaration)
+                nameNode.setType(Type(typeDeclaration, false))
             }
 
-            /**
-             * Ensure that no strict prefix of a qualified type is a package that contains types.
-             *
-             * If foo.bar.baz.A a = new foo.bar.baz.A() then:
-             *  - foo can't have types
-             *  - foo.bar can't have types
-             *  - foo.bar.baz can have types (ex: foo.bar.baz.A)
-             */
+            else -> {
+                val qualifiedName = nameNode.getChild("QualifiedName")
+                val typeName = qualifiedName.getChild("IDENTIFIER").lexeme
+                val packageName = serializeName(qualifiedName.getChild("Name"))
+                val packageNameIdentifiers = packageName.split(".")
 
-            for (i in IntRange(1, pkg.size - 1)) {
-                val prefix = pkg.subList(0, i)
-                val prefixPackageName = prefix.joinToString(".")
-
-                if (packageManager.doesPackageExist(prefixPackageName) && packageManager.getTypesDeclaredInPackage(prefixPackageName).isNotEmpty()) {
-                    throw NameResolutionError("Prefix \"$prefixPackageName\" of a package \"$packageName\" used to resolve type \"$typeName\" contained a type.")
+                if (!packageManager.doesPackageExist(packageName)) {
+                    throw NameResolutionError(
+                        "Tried to access type \"$typeName\" in non-existent package \"$packageName\"."
+                    )
                 }
-            }
 
-            /**
-             * Ensure that no strict prefix of a qualified type is a type itself.
-             *
-             * If foo.bar.baz.A a = new foo.bar.baz.A() then:
-             *  - foo can't be a type
-             *  - foo.bar can't be a type
-             *  - foo.bar.baz can't be a type
-             */
-            for (i in IntRange(0, pkg.size - 1)) {
-                val prefix = pkg.subList(0, i + 1)
+                /**
+                 * Ensure that no strict prefix of a qualified type is a package that contains types.
+                 *
+                 * If foo.bar.baz.A a = new foo.bar.baz.A() then:
+                 *  - foo can't have types
+                 *  - foo.bar can't have types
+                 *  - foo.bar.baz can have types (ex: foo.bar.baz.A)
+                 */
 
-                if (prefix.size == 1) {
-                    if (environment.contains(prefix[0]) || importOnDemandDeclarationEnvironment.contains(prefix[0])) {
-                        throw NameResolutionError("Prefix \"${prefix[0]}\" of qualified type \"${name.joinToString(".")}\" is a type")
-                    }
-                } else {
-                    val prefixPrefixPackage = prefix.subList(0, prefix.size - 1)
-                    val prefixPrefixPackageName = prefixPrefixPackage.joinToString(".")
-                    val prefixType = prefix.last()
+                for (i in IntRange(1, packageNameIdentifiers.size - 1)) {
+                    val prefix = packageNameIdentifiers.subList(0, i)
+                    val prefixPackageName = prefix.joinToString(".")
 
-                    if (packageManager.doesPackageExist(prefixPrefixPackageName) && packageManager.getTypesDeclaredInPackage(prefixPrefixPackageName).contains(prefixType)) {
-                        throw NameResolutionError("Prefix \"${prefix.joinToString(".")}\" of qualified type \"${name.joinToString(".")}\" is a type")
+                    if (
+                        packageManager.doesPackageExist(prefixPackageName) &&
+                        packageManager.getTypesDeclaredInPackage(prefixPackageName).isNotEmpty()
+                    ) {
+                        throw NameResolutionError(
+                            "Prefix \"$prefixPackageName\" of a package \"$packageName\" used to resolve type \"$typeName\" contained a type."
+                        )
                     }
                 }
-            }
 
-            val typesInPackage = packageManager.getTypesDeclaredInPackage(packageName)
-            if (!typesInPackage.containsKey(typeName)) {
-                throw NameResolutionError("Tried to access type \"$typeName\" in package \"$packageName\", but type \"$typeName\" doesn't exist.")
-            }
+                /**
+                 * Ensure that no strict prefix of a qualified type is a type itself.
+                 *
+                 * If foo.bar.baz.A a = new foo.bar.baz.A() then:
+                 *  - foo can't be a type
+                 *  - foo.bar can't be a type
+                 *  - foo.bar.baz can't be a type
+                 */
+                for (i in IntRange(0, packageNameIdentifiers.size - 1)) {
+                    val prefix = packageNameIdentifiers.subList(0, i + 1)
 
-            addNameResolution(nameNode, typesInPackage[typeName]!!)
-            nameNode.setType(Type(typesInPackage[typeName]!!, false))
+                    if (prefix.size == 1) {
+                        if (environment.contains(prefix[0]) || importOnDemandDeclarationEnvironment.contains(prefix[0])) {
+                            val serializedQualifiedName = serializeName(nameNode)
+                            throw NameResolutionError(
+                                "Prefix \"${prefix[0]}\" of qualified type \"$serializedQualifiedName\" is a type"
+                            )
+                        }
+                    } else {
+                        val prefixPrefixPackage = prefix.subList(0, prefix.size - 1)
+                        val prefixPrefixPackageName = prefixPrefixPackage.joinToString(".")
+                        val prefixType = prefix.last()
+
+                        if (
+                            packageManager.doesPackageExist(prefixPrefixPackageName) &&
+                            packageManager.getTypesDeclaredInPackage(prefixPrefixPackageName).contains(prefixType)
+                        ) {
+                            val serializedPrefix = prefix.joinToString(".")
+                            val serializedQualifiedName = serializeName(qualifiedName)
+                            throw NameResolutionError(
+                                "Prefix \"$serializedPrefix\" of qualified type \"$serializedQualifiedName\" is a type."
+                            )
+                        }
+                    }
+                }
+
+                val typesInPackage = packageManager.getTypesDeclaredInPackage(packageName)
+                if (!typesInPackage.containsKey(typeName)) {
+                    throw NameResolutionError(
+                        "Tried to access non-existent type \"$typeName\" in package \"$packageName\"."
+                    )
+                }
+
+                addNameResolution(nameNode, typesInPackage[typeName]!!)
+                nameNode.setType(Type(typesInPackage[typeName]!!, false))
+            }
         }
     }
 
@@ -239,90 +269,106 @@ class NameResolutionVisitor(
     }
 
     fun resolveExpressionName(nameNode: CSTNode) {
-        val name = nameNode.getDescendants("IDENTIFIER").map({ it.lexeme })
-        if (name.size == 1) {
-            val expressionName = name[0]
+        when (nameNode.children[0].name) {
+            "SimpleName" -> {
+                val simpleName = nameNode.getChild("SimpleName")
+                val identifier = simpleName.getChild("IDENTIFIER").lexeme
 
-            // Ensure that the expression name is defined. If so, add it to the name resolution, otherwise throw error.
-            val declarationNode = environment.find(expressionName)
-            addNameResolution(nameNode, declarationNode)
+                val declarationNode = environment.find(identifier)
+                addNameResolution(nameNode, declarationNode)
 
-            if (declarationNode.name == "FieldDeclaration") {
-                validateUsageOfFieldDeclaration(declarationNode)
-            }
-
-            if (declarationNode.name == "LocalVariableDeclaration") {
-                validateUsageOfLocalVariableDeclaration(declarationNode)
-            }
-
-            nameNode.setType(getDeclarationType(declarationNode))
-        } else {
-            val ambiguousPrefix = name.subList(0, name.size - 1)
-            val id = name.last()
-            val ambiguousPrefixReclassification = resolveAmbiguousName(ambiguousPrefix)
-
-            when (ambiguousPrefixReclassification.first) {
-                ReclassifiedNameType.Package -> {
-                    val packageName = ambiguousPrefix.joinToString(".")
-                    throw NameResolutionError("In ExpressionName \"${name.joinToString(".")}\", ambiguous prefix \"$packageName\" resolved to a package, which is illegal.")
+                if (declarationNode.name == "FieldDeclaration") {
+                    validateUsageOfFieldDeclaration(declarationNode)
                 }
 
-                ReclassifiedNameType.Type -> {
-                    val classDeclaration = ambiguousPrefixReclassification.second!!.type
-                    if (classDeclaration.name != "ClassDeclaration") {
-                        throw NameResolutionError("Tried to access static field on type \"${classDeclaration.name}\" node called \"${getDeclarationName(classDeclaration)}\". Statics are only supported on classes.")
-                    }
-
-                    val fields = packageManager.getAccessibleStaticMembers(getCurrentClassDeclaration(), classDeclaration)
-                        .filter({ it.name == "FieldDeclaration" && getDeclarationName(it) == id })
-
-                    if (fields.isEmpty()) {
-                        val typeName = ambiguousPrefix.joinToString(".")
-                        throw NameResolutionError("Prefix \"$typeName\" is TypeName, but static field \"$id\" isn't accessible in type \"$typeName\".")
-                    }
-
-                    val declarationNode = fields[0]
-                    if ("static" !in getModifiers(declarationNode)) {
-                        throw NameResolutionError("Tried to access non-static field \"${getDeclarationName(fields[0])}\" from a static context.")
-                    }
-
-                    addNameResolution(nameNode, declarationNode)
-                    nameNode.setType(getDeclarationType(declarationNode))
+                if (declarationNode.name == "LocalVariableDeclaration") {
+                    validateUsageOfLocalVariableDeclaration(declarationNode)
                 }
 
-                ReclassifiedNameType.Expression -> {
-                    val typeDeclarationOfExpression = ambiguousPrefixReclassification.second!!.type
+                nameNode.setType(getDeclarationType(declarationNode))
+            }
 
-                    val isTypeArray = ambiguousPrefixReclassification.second!!.isArray
-                    if (isTypeArray) {
-                        if (id != "length") {
-                            throw NameResolutionError("Only the length field is defined on arrays. Tried to access field ${id} on the array \"${ambiguousPrefix.joinToString { "." }}\".")
-                        }
-                        // TODO: Think about what does name node resolve to.
-                        // TODO: Have to make sure that this doesn't appear in a place where it can be assigned to
+            else -> {
+                val qualifiedName = nameNode.getChild("QualifiedName")
+                val ambiguousPrefixName = qualifiedName.getChild("Name")
+                val identifier = qualifiedName.getChild("IDENTIFIER").lexeme
+                val ambiguousPrefixReclassification = resolveAmbiguousName(ambiguousPrefixName)
 
-                        if (getCurrentLeftHandSide() != null) {
-                            throw TypeCheckingError("While resolving \"${ambiguousPrefix.joinToString(".")}.$id\", detected an \"array.length\" within a \"LeftHandSide\". This implies that you may be writing to final \"length\" property of an array.")
-                        }
+                when (ambiguousPrefixReclassification) {
+                    ReclassifiedNameType.Package -> {
+                        val serializedFullName = serializeName(qualifiedName)
+                        val packageName = serializeName(ambiguousPrefixName)
+                        throw NameResolutionError(
+                            "In ExpressionName \"$serializedFullName\", ambiguous prefix \"$packageName\" resolved to a package, which is illegal."
+                        )
+                    }
 
-                        nameNode.setType(Type(CSTNode("int"), false))
-                    } else {
-                        if (typeDeclarationOfExpression.name in PRIMITIVE_TYPE_NAMES) {
-                            throw NameResolutionError("Tried to access field of an expression that evaluates to primitive type \"${typeDeclarationOfExpression.name}\"")
-                        }
-
-                        val currentClass = getCurrentClassDeclaration()
-                        val members = packageManager.getAccessibleInstanceMembers(currentClass, typeDeclarationOfExpression)
-                            .filter({ it.name == "FieldDeclaration" && getDeclarationName(it) == id })
-
-                        if (members.isEmpty()) {
-                            val expressionTypeName = getDeclarationName(typeDeclarationOfExpression)
-                            throw NameResolutionError("Prefix \"${ambiguousPrefix.joinToString(".")}\" is ExpressionName which refers to type \"$expressionTypeName\", but failed to find instance field \"$id\" said type.")
+                    ReclassifiedNameType.Type -> {
+                        val classDeclaration = ambiguousPrefixName.getDeclaration()
+                        if (classDeclaration.name != "ClassDeclaration") {
+                            throw TriedToAccessStaticMemberOnNonClassDeclaration(classDeclaration.name, getDeclarationName(classDeclaration))
                         }
 
-                        val fieldDeclarationNode = members[0]
-                        addNameResolution(nameNode, fieldDeclarationNode)
-                        nameNode.setType(getDeclarationType(fieldDeclarationNode))
+                        val fields = packageManager.getAccessibleStaticMembers(getCurrentClassDeclaration(), classDeclaration)
+                            .filter({ it.name == "FieldDeclaration" && getDeclarationName(it) == identifier })
+
+                        if (fields.isEmpty()) {
+                            val qualifiedTypeName = serializeName(qualifiedName)
+                            throw NameResolutionError(
+                                "Prefix \"$qualifiedTypeName\" is TypeName, but static field \"$identifier\" isn't accessible in type \"$qualifiedTypeName\"."
+                            )
+                        }
+
+                        val fieldDeclaration = fields[0]
+                        if ("static" !in getModifiers(fieldDeclaration)) {
+                            val fieldDeclarationName = getDeclarationName(fieldDeclaration)
+                            throw NameResolutionError("Tried to access non-static field \"$fieldDeclarationName\" from a static context.")
+                        }
+
+                        addNameResolution(nameNode, fieldDeclaration)
+                        nameNode.setType(getDeclarationType(fieldDeclaration))
+                    }
+
+                    ReclassifiedNameType.Expression -> {
+                        val typeOfAmbiguousPrefix = ambiguousPrefixName.getType()
+
+                        if (typeOfAmbiguousPrefix.isArray) {
+                            if (identifier != "length") {
+                                val qualifiedArrayName = serializeName(ambiguousPrefixName)
+                                // Only the length field is defined on arrays.
+                                throw NameResolutionError(
+                                    "Tried to access field \"$identifier\" on the array \"$qualifiedArrayName\"."
+                                )
+                            }
+
+                            if (getCurrentLeftHandSide() != null) {
+                                val serializedFullName = serializeName(qualifiedName)
+                                throw TypeCheckingError("Tried to assign to $serializedFullName, which is final.")
+                            }
+
+                            val arrayLengthType = Type(CSTNode("int"), false)
+                            nameNode.setType(arrayLengthType)
+                        } else {
+                            val ambiguousPrefixTypeDeclaration = typeOfAmbiguousPrefix.type
+
+                            if (ambiguousPrefixTypeDeclaration.name in PRIMITIVE_TYPE_NAMES) {
+                                val serializedAmbiguousPrefixName = serializeName(ambiguousPrefixName)
+                                throw TriedToAccessFieldOfPrimitiveType(serializedAmbiguousPrefixName, ambiguousPrefixTypeDeclaration.name)
+                            }
+
+                            val currentClass = getCurrentClassDeclaration()
+                            val accessibleInstanceFieldDeclarations = packageManager.getAccessibleInstanceMembers(currentClass, ambiguousPrefixTypeDeclaration)
+                                .filter({ it.name == "FieldDeclaration" && getDeclarationName(it) == identifier })
+
+                            if (accessibleInstanceFieldDeclarations.isEmpty()) {
+                                val expressionTypeName = getDeclarationName(ambiguousPrefixTypeDeclaration)
+                                throw NameResolutionError("Prefix \"$ambiguousPrefixTypeDeclaration\" is ExpressionName which refers to type \"$expressionTypeName\", but failed to find instance field \"$identifier\" said type.")
+                            }
+
+                            val fieldDeclarationNode = accessibleInstanceFieldDeclarations.first()
+                            addNameResolution(nameNode, fieldDeclarationNode)
+                            nameNode.setType(getDeclarationType(fieldDeclarationNode))
+                        }
                     }
                 }
             }
@@ -335,105 +381,133 @@ class NameResolutionVisitor(
         Expression
     }
 
-    fun lookupTypeName(typeName: String): CSTNode? {
-        val globalEnvironmentLookup = environment.findAll({(name, node) -> name == typeName && isClassOrInterfaceDeclaration(node)})
-        if (globalEnvironmentLookup.isNotEmpty()) {
-            return globalEnvironmentLookup.first()
-        }
+    fun resolveAmbiguousName(nameNode: CSTNode) : ReclassifiedNameType {
+        when (nameNode.children[0].name) {
+            "SimpleName" -> {
+                val simpleName = nameNode.getChild("SimpleName")
+                val identifier = simpleName.getChild("IDENTIFIER").lexeme
+                val declarationTypes = setOf("LocalVariableDeclaration", "FormalParameter", "FieldDeclaration")
 
-        val iodLookup = importOnDemandDeclarationEnvironment.findAll({(name, node) -> name == typeName && isClassOrInterfaceDeclaration(node)})
-        if (iodLookup.size == 1) {
-            return iodLookup.first()
-        } else if (iodLookup.size > 1) {
-            throw NameResolutionError("Detected more than one types with name $typeName inside import on demand declaration")
-        }
-
-        return null
-    }
-
-    fun resolveAmbiguousName(identifiers: List<String>) : Pair<ReclassifiedNameType, Type?> {
-        if (identifiers.size == 1) {
-            val identifier = identifiers[0]
-            val declarationTypes = setOf("LocalVariableDeclaration", "FormalParameter", "FieldDeclaration")
-
-            val declarationLookup = environment.findAll({ (name, node) -> name == identifier && node.name in declarationTypes })
-            if (declarationLookup.isNotEmpty()) {
-                if (declarationLookup[0].name == "FieldDeclaration") {
-                    validateUsageOfFieldDeclaration(declarationLookup[0])
-                }
-
-                val declarationType = getDeclarationType(declarationLookup[0])
-                return Pair(ReclassifiedNameType.Expression, declarationType)
-            }
-
-            val typeDeclaration = lookupTypeName(identifier)
-            if (typeDeclaration != null) {
-                return Pair(ReclassifiedNameType.Type, Type(typeDeclaration, false))
-            }
-
-            return Pair(ReclassifiedNameType.Package, null)
-        }
-
-        val ambiguousPrefix = identifiers.subList(0, identifiers.size - 1)
-        val ambiguousPrefixReclassification = resolveAmbiguousName(ambiguousPrefix)
-
-        val identifier = identifiers.last()
-
-        when (ambiguousPrefixReclassification.first) {
-            ReclassifiedNameType.Package -> {
-                val packageName = ambiguousPrefix.joinToString(".")
-
-                if (packageManager.doesPackageExist(packageName) && packageManager.getTypesDeclaredInPackage(packageName).contains(identifier)) {
-                    val typeDeclaration = packageManager.getTypesDeclaredInPackage(packageName)[identifier]!!
-                    return Pair(ReclassifiedNameType.Type, Type(typeDeclaration, false))
-                }
-                return Pair(ReclassifiedNameType.Package, null)
-            }
-
-            ReclassifiedNameType.Type -> {
-                val classDeclaration = ambiguousPrefixReclassification.second!!.type
-
-                if (classDeclaration.name != "ClassDeclaration") {
-                    throw NameResolutionError("Tried to access static field or method on type \"${classDeclaration.name}\" node called \"${getDeclarationName(classDeclaration)}\". Statics are only supported on classes.")
-                }
-
-                val members = packageManager.getClassInheritedDescendants(classDeclaration, { (it.name == "FieldDeclaration" || it.name == "MethodDeclaration") && "static" in getModifiers(it) })
-
-                val memberLookup = members.filter({ getDeclarationName(it) == identifier })
-                if (memberLookup.isNotEmpty()) {
-                    val memberType = getDeclarationType(memberLookup[0])
-                    return Pair(ReclassifiedNameType.Expression, memberType)
-                }
-
-                throw NameResolutionError("Prefix \"$ambiguousPrefix\" is TypeName, but \"$identifier\" doesn't exist in the type.")
-            }
-
-            ReclassifiedNameType.Expression -> {
-                val expressionType = ambiguousPrefixReclassification.second!!
-                val currentClass = getCurrentClassDeclaration()
-
-                if (expressionType.isArray) {
-                    throw NameResolutionError("Ambiguous name resolved to an array.")
-                } else {
-                    val expressionTypeDeclaration = expressionType.type
-
-                    if (expressionTypeDeclaration.name in PRIMITIVE_TYPE_NAMES) {
-                        throw NameResolutionError("Tried to access member of a primitive type \"${expressionTypeDeclaration.name}\"")
+                val declarationLookup = environment.findAll({ (name, node) -> name == identifier && node.name in declarationTypes })
+                if (declarationLookup.isNotEmpty()) {
+                    val declaration = declarationLookup[0]
+                    if (declaration.name == "FieldDeclaration") {
+                        validateUsageOfFieldDeclaration(declaration)
                     }
 
-                    val members = packageManager.getAccessibleInstanceMembers(currentClass, expressionTypeDeclaration)
-                        .filter({ it.name == "FieldDeclaration" })
+                    addNameResolution(nameNode, declaration)
 
+                    val type = getDeclarationType(declaration)
+                    nameNode.setType(type)
 
+                    return ReclassifiedNameType.Expression
+                }
 
-                    val memberLookup = members.filter({ getDeclarationName(it) == identifier })
-                    if (memberLookup.isNotEmpty()) {
-                        val member = memberLookup[0]
-                        return Pair(ReclassifiedNameType.Expression, getDeclarationType(member))
+                val typeDeclaration = findTypeDeclarationByName(identifier)
+                if (typeDeclaration != null) {
+                    val type = Type(typeDeclaration, false)
+                    nameNode.setType(type)
+                    addNameResolution(nameNode, typeDeclaration)
+
+                    return ReclassifiedNameType.Type
+                }
+
+                return ReclassifiedNameType.Package
+            }
+
+            else -> {
+                val qualifiedName = nameNode.getChild("QualifiedName")
+                val ambiguousPrefixName = qualifiedName.getChild("Name")
+
+                val ambiguousPrefixReclassification = resolveAmbiguousName(ambiguousPrefixName)
+                val identifier = qualifiedName.getChild("IDENTIFIER").lexeme
+
+                when (ambiguousPrefixReclassification) {
+                    ReclassifiedNameType.Package -> {
+                        val packageName = serializeName(ambiguousPrefixName)
+
+                        if (
+                            packageManager.doesPackageExist(packageName) &&
+                            packageManager.getTypesDeclaredInPackage(packageName).contains(identifier)
+                        ) {
+                            val typeDeclaration = packageManager.getTypesDeclaredInPackage(packageName)[identifier]!!
+                            addNameResolution(nameNode, typeDeclaration)
+
+                            val type = Type(typeDeclaration, false)
+                            nameNode.setType(type)
+
+                            return ReclassifiedNameType.Type
+                        }
+
+                        return ReclassifiedNameType.Package
                     }
 
-                    val expressionTypeName = getDeclarationName(expressionTypeDeclaration)
-                    throw NameResolutionError("Prefix \"$ambiguousPrefix\" is ExpressionName which refers to type \"$expressionTypeName\", but failed to find instance method or field \"$identifier\" said type.")
+                    ReclassifiedNameType.Type -> {
+                        val classDeclaration = ambiguousPrefixName.getDeclaration()
+
+                        if (classDeclaration.name != "ClassDeclaration") {
+                            throw TriedToAccessStaticMemberOnNonClassDeclaration(classDeclaration.name, getDeclarationName(classDeclaration))
+                        }
+
+                        // TODO: Does MethodDeclaration below make sense?
+                        val isStaticMemberDeclaration = { node: CSTNode ->
+                            (node.name == "FieldDeclaration" || node.name == "MethodDeclaration") && "static" in getModifiers(node)
+                        }
+
+                        val staticMemberDeclarations = packageManager.getClassInheritedDescendants(classDeclaration, isStaticMemberDeclaration)
+
+                        val matchingStaticMemberDeclarations = staticMemberDeclarations.filter({ getDeclarationName(it) == identifier })
+                        if (matchingStaticMemberDeclarations.isNotEmpty()) {
+                            val matchingStaticMemberDeclaration = matchingStaticMemberDeclarations.first()
+                            addNameResolution(nameNode, matchingStaticMemberDeclaration)
+
+                            val type = getDeclarationType(matchingStaticMemberDeclaration)
+                            nameNode.setType(type)
+
+                            return ReclassifiedNameType.Expression
+                        }
+
+                        val qualifiedClassName = serializeName(ambiguousPrefixName)
+                        throw NameResolutionError("Prefix \"$qualifiedClassName\" is TypeName, but member \"$identifier\" doesn't exist in the type.")
+                    }
+
+                    ReclassifiedNameType.Expression -> {
+                        val expressionType = ambiguousPrefixName.getType()
+                        val currentClass = getCurrentClassDeclaration()
+
+                        if (expressionType.isArray) {
+                            val qualifiedAmbiguousPrefixName = serializeName(ambiguousPrefixName)
+                            throw NameResolutionError("Ambiguous names cannot resolve to arrays, but \"$qualifiedAmbiguousPrefixName\" did.")
+                        } else {
+                            val expressionTypeDeclaration = expressionType.type
+
+                            if (expressionTypeDeclaration.name in PRIMITIVE_TYPE_NAMES) {
+                                throw NameResolutionError("Tried to access member \"$identifier\" of a primitive type \"${expressionTypeDeclaration.name}\"")
+                            }
+
+                            val fieldDeclarations = packageManager.getAccessibleInstanceMembers(currentClass, expressionTypeDeclaration)
+                                .filter({ it.name == "FieldDeclaration" })
+
+                            val matchingFieldDeclarations = fieldDeclarations.filter({ getDeclarationName(it) == identifier })
+                            if (matchingFieldDeclarations.isNotEmpty()) {
+                                val matchingFieldDeclaration = matchingFieldDeclarations.first()
+                                addNameResolution(nameNode, matchingFieldDeclaration)
+
+                                val type = getDeclarationType(matchingFieldDeclaration)
+                                nameNode.setType(type)
+
+                                return ReclassifiedNameType.Expression
+                            }
+
+                            val expressionTypeName = getDeclarationName(expressionTypeDeclaration)
+                            val qualifiedAmbiguousPrefixName = serializeName(ambiguousPrefixName)
+                            throw NameResolutionError(
+                                "Prefix \"$qualifiedAmbiguousPrefixName\" is an ExpressionName that refers to " +
+                                    "type \"$expressionTypeName\", but failed to find instance method or field " +
+                                    "\"$identifier\" of said type."
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -1509,10 +1583,10 @@ class NameResolutionVisitor(
 
         if (node.children[0].name == "Name") {
             val nameNode = node.getChild("Name")
-            val name = nameNode.getDescendants("IDENTIFIER").map({ it.lexeme })
 
-            if (name.size == 1) {
-                val methodName = name[0]
+            if (nameNode.children[0].name == "SimpleName") {
+                val simpleName = nameNode.getChild("SimpleName")
+                val methodName = simpleName.getChild("IDENTIFIER").lexeme
                 val currentClassDeclaration = getCurrentClassDeclaration()
                 val isCurrentClassAbstract = "abstract" in getModifiers(currentClassDeclaration)
 
@@ -1542,18 +1616,21 @@ class NameResolutionVisitor(
                 addNameResolution(nameNode, methodDeclarationNode)
                 node.setType(getDeclarationType(methodDeclarationNode))
             } else {
-                val methodName = name.last()
-                val ambiguousPrefix = name.subList(0, name.size - 1)
-                val ambiguousPrefixResolution = resolveAmbiguousName(ambiguousPrefix)
+                val qualifiedName = nameNode.getChild("QualifiedName")
+                val methodName = qualifiedName.getChild("IDENTIFIER").lexeme
+                val ambiguousPrefixName = qualifiedName.getChild("Name")
+                val ambiguousPrefixResolution = resolveAmbiguousName(ambiguousPrefixName)
 
-                when (ambiguousPrefixResolution.first) {
+                val serializedAmbiguousPrefix = ambiguousPrefixName.getDescendants("IDENTIFIER").map({ it.lexeme }).joinToString(".")
+
+                when (ambiguousPrefixResolution) {
                     ReclassifiedNameType.Package -> {
-                        val packageName = ambiguousPrefix.joinToString(".")
+                        val packageName = serializedAmbiguousPrefix
                         throw NameResolutionError("Tried to call method \"$methodName\" on package \"$packageName\"")
                     }
 
                     ReclassifiedNameType.Type -> {
-                        val resolvedType = ambiguousPrefixResolution.second!!
+                        val resolvedType = ambiguousPrefixName.getType()
                         val typeDeclaration = resolvedType.type
                         val currentClass = getCurrentClassDeclaration()
 
@@ -1583,7 +1660,7 @@ class NameResolutionVisitor(
                     }
 
                     ReclassifiedNameType.Expression -> {
-                        val resolvedType = ambiguousPrefixResolution.second!!
+                        val resolvedType = ambiguousPrefixName.getType()
                         val resolvedTypeDeclaration = resolvedType.type
                         val currentClass = getCurrentClassDeclaration()
 
@@ -1669,7 +1746,7 @@ class NameResolutionVisitor(
             "INTEGER" -> CSTNode("int")
             "BOOLEAN" -> CSTNode("boolean")
             "CHARACTER" -> CSTNode("char")
-            "STRING" -> lookupTypeName("String")!!
+            "STRING" -> findTypeDeclarationByName("String")!!
             "NULL" -> CSTNode("NULL")
             else -> {
                 throw TypeCheckingError("Detected illegal type when visiting literal.")

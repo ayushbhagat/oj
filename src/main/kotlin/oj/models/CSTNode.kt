@@ -433,3 +433,11 @@ fun getQualifiedIdentifierFromName(name: CSTNode): String {
 val isClassOrInterfaceDeclaration = { node: CSTNode ->
     node.name == "ClassDeclaration" || node.name == "InterfaceDeclaration"
 }
+
+fun serializeName(nameNode: CSTNode): String {
+    if (nameNode.name !in listOf("Name", "QualifiedName", "SimpleName")) {
+        throw CSTNodeError("Inside \"serializeName\": Tried to serialize non-name node.")
+    }
+
+    return nameNode.getDescendants("IDENTIFIER").map({ it.lexeme }).joinToString(".")
+}
