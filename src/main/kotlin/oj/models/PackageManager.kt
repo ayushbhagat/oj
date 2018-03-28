@@ -62,6 +62,14 @@ class PackageManager(
         return null
     }
 
+    fun getJavaIOType(typeName: String): CSTNode? {
+        if (doesPackageExist("java.io")) {
+            return typesDeclaredInPackages["java.io"].orEmpty()[typeName]
+        }
+
+        return null
+    }
+
     class TriedToGetPackageOfNonType(nodeType: String): PackageManagerError("Tried to access package of a non-type CSTNode: \"$nodeType\"")
     class PackageNotFoundForType(typeName: String): PackageManagerError("Package not found for type \"$typeName\"")
 
@@ -374,6 +382,114 @@ class PackageManager(
             )
     }
 
+    private val classOverriddenStaticFieldsMap = mutableMapOf<CSTNode, List<CSTNode>>()
+    fun getClassOverriddenStaticFields(classDeclaration: CSTNode): List<CSTNode> {
+        return getClassOverriddenMembers(
+            classDeclaration,
+            { "FieldDeclaration" == it.name && "static" in getModifiers(it) },
+            { a, b -> getDeclarationName(a) == getDeclarationName(b) },
+            classOverriddenStaticFieldsMap
+        )
+    }
+
+    private val classOverriddenInstanceFieldsMap = mutableMapOf<CSTNode, List<CSTNode>>()
+    fun getClassOverriddenInstanceFields(classDeclaration: CSTNode): List<CSTNode> {
+        return getClassOverriddenMembers(
+            classDeclaration,
+            { "FieldDeclaration" == it.name && "static" !in getModifiers(it) },
+            { a, b -> getDeclarationName(a) == getDeclarationName(b) },
+            classOverriddenInstanceFieldsMap
+        )
+    }
+
+    private val classOverriddenStaticMethodsMap = mutableMapOf<CSTNode, List<CSTNode>>()
+    fun getClassOverriddenStaticMethods(classDeclaration: CSTNode): List<CSTNode> {
+        return getClassOverriddenMembers(
+            classDeclaration,
+            { "MethodDeclaration" == it.name && "static" in getModifiers(it) },
+            { a, b -> canMethodsReplaceOneAnother(a.getChild("MethodHeader"), b.getChild("MethodHeader"))},
+            classOverriddenStaticMethodsMap
+        )
+    }
+
+    private val classOverriddenInstanceMethodsMap = mutableMapOf<CSTNode, List<CSTNode>>()
+    fun getClassOverriddenInstanceMethods(classDeclaration: CSTNode): List<CSTNode> {
+        return getClassOverriddenMembers(
+            classDeclaration,
+            { "MethodDeclaration" == it.name && "static" !in getModifiers(it) },
+            { a, b -> canMethodsReplaceOneAnother(a.getChild("MethodHeader"), b.getChild("MethodHeader"))},
+            classOverriddenInstanceMethodsMap
+        )
+    }
+
+    private fun getClassOverriddenMembers(
+        classDeclaration: CSTNode,
+        predicate: (CSTNode) -> Boolean,
+        areEqual: (CSTNode, CSTNode) -> Boolean,
+        memoizedMap: MutableMap<CSTNode, List<CSTNode>>
+    ) : List<CSTNode> {
+        if (classDeclaration.name != "ClassDeclaration") {
+            throw PackageManagerError("Expected a class declaration, but found ${classDeclaration.name} instead.")
+        }
+
+        if (classDeclaration in memoizedMap) {
+            return memoizedMap[classDeclaration]!!
+        }
+
+        val classBody = classDeclaration.getChild("ClassBody")
+        val ownFieldDeclarations = classBody.getDescendants(predicate)
+
+        val superOptNode = classDeclaration.getChild("SuperOpt")
+        val superNode = if (superOptNode.children.size == 1) superOptNode.getChild("Super") else null
+
+        val allFields =
+            if (superNode != null) {
+                getClassOverriddenMembers(superNode.getDescendant("Name").getDeclaration(), predicate, areEqual, memoizedMap)
+            } else {
+                val baseSuperClass = getJavaLangType("Object")
+                if (baseSuperClass != null) {
+                    val baseSuperClassClassBody = baseSuperClass.getChild("ClassBody")
+                    baseSuperClassClassBody.getDescendants(predicate)
+                } else {
+                    mutableListOf()
+                }
+            }.toMutableList()
+
+        ownFieldDeclarations.forEach({ ownField ->
+            val allFieldIndex = allFields.indexOfFirst({ areEqual(it, ownField) })
+
+            if (allFieldIndex == -1) {
+                allFields.add(ownField)
+            } else {
+                allFields[allFieldIndex] = ownField
+            }
+        })
+
+        memoizedMap[classDeclaration] = allFields
+
+        return allFields
+    }
+
+    fun getSuperClass(classDeclaration: CSTNode): CSTNode? {
+        if (classDeclaration.name != "ClassDeclaration") {
+            throw PackageManagerError("Tried to get super class of non-class CSTNode of type ${classDeclaration.name}")
+        }
+
+        val superOptNode = classDeclaration.getChild("SuperOpt")
+        val superNode = if (superOptNode.children.size == 1) superOptNode.getChild("Super") else null
+
+        if (superNode != null) {
+            return superNode.getDescendant("Name").getDeclaration()
+        }
+
+        val baseClassDeclaration = getJavaLangType("Object")
+        if (classDeclaration == baseClassDeclaration) {
+            return null
+        }
+
+        return baseClassDeclaration
+    }
+
     fun colonEquals(typeOfA: Type, typeOfB: Type): Boolean {
         val areBothArraysOrNonArrays = typeOfA.isArray && typeOfB.isArray || !typeOfA.isArray && !typeOfB.isArray
 
@@ -455,4 +571,214 @@ class PackageManager(
 
     }
 
+    fun getClassDeclarationLabel(classDeclaration: CSTNode): String {
+        if (classDeclaration.name != "ClassDeclaration") {
+            throw PackageManagerError("Tried to get label of non-class declaration CSTNode ${classDeclaration.name}")
+        }
+
+        val packageName = getPackageNameOfType(classDeclaration)
+        val packageLabel =
+            if (packageName.isEmpty()) {
+                "#"
+            } else {
+                packageName.replace('.', '#')
+            }
+
+        return packageLabel + getDeclarationName(classDeclaration)
+    }
+
+    private val classMemberLabelMap = mutableMapOf<CSTNode, String>()
+
+    fun getClassMemberLabel(classDeclaration: CSTNode, memberDeclaration: CSTNode): String {
+        if (classDeclaration.name != "ClassDeclaration") {
+            throw PackageManagerError("Tried to get label for the member of a non-class \"${classDeclaration.name}\"")
+        }
+
+        if (memberDeclaration.name !in setOf("FieldDeclaration", "MethodDeclaration", "AbstractMethodDeclaration", "ConstructorDeclaration")) {
+            val className = getDeclarationName(classDeclaration)
+            throw PackageManagerError("Tried to get label for a non-member \"${memberDeclaration.name}\" of class \"$className\"")
+        }
+
+        val classDeclarationLabel = getClassDeclarationLabel(classDeclaration)
+
+        if (memberDeclaration.name == "FieldDeclaration") {
+            val fieldName = getDeclarationName(memberDeclaration)
+            val label = "FIELD#$classDeclarationLabel#$fieldName"
+            classMemberLabelMap[memberDeclaration] = label
+            return label
+        }
+
+
+        val formalParameterListOpt = when (memberDeclaration.name) {
+            in setOf("AbstractMethodDeclaration", "MethodDeclaration") -> {
+                val methodHeader = memberDeclaration.getChild("MethodHeader")
+                val methodDeclarator = methodHeader.getChild("MethodDeclarator")
+                methodDeclarator.getChild("FormalParameterListOpt")
+            }
+            "ConstructorDeclaration" -> {
+                val constructorDeclarator = memberDeclaration.getChild("ConstructorDeclarator")
+                constructorDeclarator.getChild("FormalParameterListOpt")
+            }
+            else -> {
+                throw PackageManagerError("Tried to get FormalParameterListOpt of non-constructor and non-method CSTNode of type ${memberDeclaration.name}")
+            }
+        }
+
+        val formalParameterTypes = getFormalParameterTypes(formalParameterListOpt)
+
+        val serializedFormalParameters = formalParameterTypes.map({ formalParameterType ->
+            if (formalParameterType.type.name in setOf("ClassDeclaration", "InterfaceDeclaration")) {
+                getClassDeclarationLabel(formalParameterType.type)
+            } else {
+                formalParameterType.type.name
+            } + if (formalParameterType.isArray) "?" else ""
+        }).joinToString("@")
+
+        val label = when (memberDeclaration.name) {
+            in setOf("AbstractMethodDeclaration", "MethodDeclaration") -> {
+                val methodName = getDeclarationName(memberDeclaration)
+                "METHOD#$classDeclarationLabel#$methodName#$serializedFormalParameters"
+            }
+            "ConstructorDeclaration" -> {
+                "CONSTRUCTOR#$classDeclarationLabel#$serializedFormalParameters"
+            }
+            else -> {
+                throw PackageManagerError("Tried to get Label of non-constructor and non-method CSTNode of type ${memberDeclaration.name}")
+            }
+        }
+
+        return label
+    }
+
+    fun getClassMemberLabel(memberDeclaration: CSTNode): String {
+        if (memberDeclaration.name !in setOf("FieldDeclaration", "MethodDeclaration", "AbstractMethodDeclaration", "ConstructorDeclaration")) {
+            throw PackageManagerError("Tried to get label for a non-member ${memberDeclaration.name}")
+        }
+
+        if (memberDeclaration in classMemberLabelMap) {
+            return classMemberLabelMap[memberDeclaration]!!
+        }
+
+        for ((_, compilationUnits) in packages) {
+            for (compilationUnit in compilationUnits) {
+                if (compilationUnit.getDescendants({ it == memberDeclaration }).isEmpty()) {
+                    continue
+                }
+
+                val classDeclaration = compilationUnit.getDescendant("ClassDeclaration")
+
+                val label = getClassMemberLabel(classDeclaration, memberDeclaration)
+                classMemberLabelMap[memberDeclaration] = label
+                return label
+            }
+        }
+
+        val memberDeclarationName = getDeclarationName(memberDeclaration)
+        throw PackageManagerError("Could not find class declaration for member \"$memberDeclarationName\"")
+    }
+
+    fun getInstanceFieldInitializerLabel(classDeclaration: CSTNode): String {
+        if (classDeclaration.name != "ClassDeclaration") {
+            throw PackageManagerError("Tried to get instance field initializer label of non-class declaration CSTNode ${classDeclaration.name}")
+        }
+
+        val classLabel = getClassDeclarationLabel(classDeclaration)
+        return "INSTANCE_FIELD_INITIALIZERS#$classLabel"
+    }
+
+    fun getStaticFieldInitializerLabel(classDeclaration: CSTNode): String {
+        if (classDeclaration.name != "ClassDeclaration") {
+            throw PackageManagerError("Tried to get instance field initializer label of non-class declaration CSTNode ${classDeclaration.name}")
+        }
+
+        val classLabel = getClassDeclarationLabel(classDeclaration)
+        return "STATIC_FIELD_INITIALIZERS#$classLabel"
+    }
+
+    fun getStaticFieldsDefinitionLabel(classDeclaration: CSTNode): String {
+        if (classDeclaration.name != "ClassDeclaration") {
+            throw PackageManagerError("Tried to get static fields definition label of non-class declaration CSTNode ${classDeclaration.name}")
+        }
+
+        val classLabel = getClassDeclarationLabel(classDeclaration)
+        return "STATIC_FIELDS#$classLabel"
+    }
+
+    fun getVTableLabel(classDeclaration: CSTNode): String {
+        if (classDeclaration.name != "ClassDeclaration") {
+            throw PackageManagerError("Tried to get VTable label of non-class declaration CSTNode ${classDeclaration.name}")
+        }
+
+        val classLabel = getClassDeclarationLabel(classDeclaration)
+        return "V_TABLE#$classLabel"
+    }
+
+    fun getSelectorIndexedTableLabel(classDeclaration: CSTNode): String {
+        if (classDeclaration.name != "ClassDeclaration") {
+            throw PackageManagerError("Tried to get VTable label of non-class declaration CSTNode ${classDeclaration.name}")
+        }
+
+        val classLabel = getClassDeclarationLabel(classDeclaration)
+        return "SELECTOR_INDEXED_TABLE#$classLabel"
+    }
+
+    private var allInterfaceMethodsInProgram: List<CSTNode>? = null
+
+    fun getAllInterfaceMethodsInProgram(): List<CSTNode> {
+        if (allInterfaceMethodsInProgram == null) {
+            allInterfaceMethodsInProgram = packages.flatMap({(_, compilationUnits) ->
+                compilationUnits
+                    .map({ compilationUnit -> compilationUnit.getDescendant(isClassOrInterfaceDeclaration)})
+                    .filter({ type -> type.name == "InterfaceDeclaration" })
+                    .flatMap({ it.getDescendants("AbstractMethodDeclaration") })
+            })
+        }
+
+        return allInterfaceMethodsInProgram!!
+    }
+
+    private var superTypeTables = mutableMapOf<Type, Map<Type, Boolean>>()
+
+    fun getSuperTypeTable(typeToInspect: Type): Map<Type, Boolean> {
+        if (typeToInspect in superTypeTables) {
+            return superTypeTables[typeToInspect]!!
+        }
+
+        val typesInProgram = packages
+            .values
+            .flatten()
+            .map({ compilationUnit -> compilationUnit.getDescendant(isClassOrInterfaceDeclaration) })
+            .sortedBy({ getDeclarationName(it) })
+            .flatMap({ listOf(Type(it, false), Type(it, true)) })
+            .plus(
+                primitiveTypes.map({ primitiveType ->
+                    Type(CSTNode(primitiveType), true)
+                })
+            )
+
+        val superTypeTable = typesInProgram
+            .fold(mutableMapOf<Type, Boolean>(), { map, type ->
+                map[type] = colonEquals(type, typeToInspect)
+                map
+            })
+
+        superTypeTables[typeToInspect] = superTypeTable
+
+        return superTypeTable
+    }
+
+    fun getSuperTypeTableLabel(typeDeclaration: Type): String {
+        if (typeDeclaration.type.name !in "ClassDeclaration" + primitiveTypes) {
+            throw PackageManagerError("Expected argument to be a valid type, but got \"${typeDeclaration.type.name}\"")
+        }
+
+        val typeName =
+            if (typeDeclaration.type.name in primitiveTypes) {
+                typeDeclaration.type.name
+            } else {
+                getClassDeclarationLabel(typeDeclaration.type)
+            }
+
+        return "SUPER_TYPE_TABLE#$typeName#${if (typeDeclaration.isArray) "ARRAY" else "NO_ARRAY" }"
+    }
 }

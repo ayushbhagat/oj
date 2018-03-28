@@ -1,6 +1,7 @@
 package oj.nameresolver
 
 import oj.models.CSTNode
+import oj.models.Environment
 import oj.models.NFA
 import oj.models.PackageManager
 import oj.parser.CFGStateDataHelper
@@ -66,8 +67,6 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
 
                 packages[packageName] = pkg
             })
-
-
 
             NameResolver.resolveNames(PackageManager(packages))
             return packages
@@ -1675,5 +1674,96 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
 
                 """.trimIndent()))
         })
+    }
+
+    it("should allow arrays to call java.lang.Object methods") {
+        subject(listOf(
+            """
+                public class A {
+                    public A() {
+                        int[] a = new int[5];
+                        a.hashCode();
+                    }
+                }
+            """.trimIndent(),
+            """
+                package java.lang;
+                
+                public class Object {
+                    public Object() {}
+                    public int hashCode() {}
+                }
+            """.trimIndent()
+        ))
+    }
+
+    it("should allow arrays to call java.lang.Cloneable methods") {
+        subject(listOf(
+            """
+                public class A {
+                    public A() {
+                        int[] a = new int[5];
+                        a.clone();
+                    }
+                }
+            """.trimIndent(),
+            """
+                package java.lang;
+
+                public interface Cloneable {
+                    public Cloneable clone();
+                }
+            """.trimIndent()
+        ))
+    }
+
+    it("should allow arrays to call java.io.Serializable methods") {
+        val packages = subject(listOf(
+            """
+                public class A {
+                    public A() {
+                        int[] a = new int[5];
+                        a.serialize();
+                    }
+                }
+            """.trimIndent(),
+            """
+                package java.io;
+
+                public interface Serializable {
+                    public int serialize();
+                }
+            """.trimIndent()
+        ))
+    }
+
+    it("should resolve interface methods") {
+        val packages = subject(listOf(
+            """
+                public class A {
+                    public A(Foo foo) {
+                        foo.bar();
+                    }
+                }
+            """.trimIndent(),
+            """
+                public interface Foo {
+                    public int bar();
+                }
+            """.trimIndent()
+        ))
+    }
+    
+    it("should allow array length access in LValue if it appears in expression") {
+        val packages = subject(listOf(
+            """
+                public class A {
+                    public A() {
+                        int[] a = new int[5];
+                        a[a.length - 1] = 1;
+                    }
+                }
+            """.trimIndent()
+        ))
     }
 })

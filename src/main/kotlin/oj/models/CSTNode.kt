@@ -1,6 +1,5 @@
 package oj.models
 
-import oj.nameresolver.NameResolutionVisitor
 import java.util.*
 
 open class CSTNodeError(reason: String): Exception(reason)
@@ -11,7 +10,7 @@ class FoundManyChildren: CSTNodeError("Found many descendants, expected 1.")
 class FoundNoDescendant : CSTNodeError("Found no descendants, expected 1.")
 class FoundManyDescendants: CSTNodeError("Found many descendants, expected 1.")
 
-enum class NameNodeReclassification {
+enum class NameNodeClassification {
     Package,
     Type,
     Expression,
@@ -27,28 +26,28 @@ class CSTNode(
         private val declarations: MutableMap<CSTNode, CSTNode> = mutableMapOf()
         private val types: MutableMap<CSTNode, Type> = mutableMapOf()
         private val downCast: MutableSet<CSTNode> = mutableSetOf()
-        private val nameNodeReclassifications: MutableMap<CSTNode, NameNodeReclassification> = mutableMapOf()
+        private val nameNodeClassifications: MutableMap<CSTNode, NameNodeClassification> = mutableMapOf()
     }
 
-    fun setNameNodeClassification(classification: NameNodeReclassification) {
+    fun setNameNodeClassification(classification: NameNodeClassification) {
         if (name != "Name") {
             throw CSTNodeError("Tried to set name node classification from non-name \"$name\" node.")
         }
 
-        nameNodeReclassifications[this] = classification
+        nameNodeClassifications[this] = classification
     }
 
-    fun getNameNodeClassification(): NameNodeReclassification? {
+    fun getNameNodeClassification(): NameNodeClassification? {
         if (name != "Name") {
             throw CSTNodeError("Tried to get name node classification from non-name \"$name\" node.")
         }
 
-        return nameNodeReclassifications[this]
+        return nameNodeClassifications[this]
     }
 
     // TODO: Two names that are value equal will resolve to the same declaration. This is incorrect. Fix.
     fun setDeclaration(node: CSTNode) {
-        if (name != "Name" && name != "IDENTIFIER") {
+        if (name !in listOf("Name", "IDENTIFIER", "ClassInstanceCreationExpression")) {
             throw CSTNodeError("Tried to assign a declaration to a \"$name\" != \"Name\" or \"IDENTIFIER\" node.")
         }
 
@@ -56,7 +55,7 @@ class CSTNode(
     }
 
     fun getDeclaration(): CSTNode {
-        if (name != "Name" && name != "IDENTIFIER") {
+        if (name !in listOf("Name", "IDENTIFIER", "ClassInstanceCreationExpression")) {
             throw CSTNodeError("Tried to retrieve a declaration for a \"$name\" != \"Name\" or \"IDENTIFIER\" node.")
         }
 
@@ -93,6 +92,14 @@ class CSTNode(
         }
 
         CSTNode.downCast.add(this)
+    }
+
+    fun isDowncast(): Boolean {
+        if (name != "CastExpression") {
+            throw CSTNodeError("Tried to mark down-cast on a non-cast CSTNode: $name")
+        }
+
+        return this in CSTNode.downCast
     }
 
     fun getDescendant(name: String): CSTNode {
@@ -288,7 +295,19 @@ fun areMethodReturnTypesTheSame(methodHeader: CSTNode, otherMethodHeader: CSTNod
     return true
 }
 
-fun canMethodsReplaceOneAnother(methodHeader1: CSTNode, methodHeader2: CSTNode): Boolean {
+fun canMethodsReplaceOneAnother(node1: CSTNode, node2: CSTNode): Boolean {
+    val methodHeader1 = when (node1.name) {
+        "MethodHeader" -> node1
+        in setOf("AbstractMethodDeclaration", "MethodDeclaration") -> node1.getChild("MethodHeader")
+        else -> throw CSTNodeError("Expected node1 to be of type \"MethodDeclaration\" or \"AbstractMethodDeclaration\", but was \"${node1.name}\"")
+    }
+
+    val methodHeader2 = when (node2.name) {
+        "MethodHeader" -> node2
+        in setOf("AbstractMethodDeclaration", "MethodDeclaration") -> node2.getChild("MethodHeader")
+        else -> throw CSTNodeError("Expected node2 to be of type \"MethodDeclaration\" or \"AbstractMethodDeclaration\", but was \"${node2.name}\"")
+    }
+
     val methodDeclarator1 = methodHeader1.getChild("MethodDeclarator")
     val methodDeclarator2 = methodHeader2.getChild("MethodDeclarator")
 
@@ -354,6 +373,10 @@ fun getDeclarationName(declaration: CSTNode): String {
 
         val variableDeclarator = thirdChild
         return variableDeclarator.getChild("IDENTIFIER").lexeme
+    }
+
+    if (declaration.name == "FormalParameter") {
+        return declaration.getChild("IDENTIFIER").lexeme
     }
 
     throw TriedToGetNameOfAnUnsupportedCSTNode(declaration.name)

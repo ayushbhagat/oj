@@ -80,7 +80,7 @@ class NameResolutionVisitor(
     }
 
     fun resolveTypeName(nameNode: CSTNode) {
-        nameNode.setNameNodeClassification(NameNodeReclassification.Type)
+        nameNode.setNameNodeClassification(NameNodeClassification.Type)
 
         when (nameNode.children[0].name) {
             "SimpleName" -> {
@@ -273,7 +273,7 @@ class NameResolutionVisitor(
     }
 
     fun resolveExpressionName(nameNode: CSTNode) {
-        nameNode.setNameNodeClassification(NameNodeReclassification.Expression)
+        nameNode.setNameNodeClassification(NameNodeClassification.Expression)
 
         when (nameNode.children[0].name) {
             "SimpleName" -> {
@@ -301,7 +301,7 @@ class NameResolutionVisitor(
                 resolveAmbiguousName(ambiguousPrefixName)
 
                 when (ambiguousPrefixName.getNameNodeClassification()) {
-                    NameNodeReclassification.Package -> {
+                    NameNodeClassification.Package -> {
                         val serializedFullName = serializeName(qualifiedName)
                         val packageName = serializeName(ambiguousPrefixName)
                         throw NameResolutionError(
@@ -309,7 +309,7 @@ class NameResolutionVisitor(
                         )
                     }
 
-                    NameNodeReclassification.Type -> {
+                    NameNodeClassification.Type -> {
                         val classDeclaration = ambiguousPrefixName.getDeclaration()
                         if (classDeclaration.name != "ClassDeclaration") {
                             throw TriedToAccessStaticMemberOnNonClassDeclaration(classDeclaration.name, getDeclarationName(classDeclaration))
@@ -335,7 +335,7 @@ class NameResolutionVisitor(
                         nameNode.setType(getDeclarationType(fieldDeclaration))
                     }
 
-                    NameNodeReclassification.Expression -> {
+                    NameNodeClassification.Expression -> {
                         val typeOfAmbiguousPrefix = ambiguousPrefixName.getType()
 
                         if (typeOfAmbiguousPrefix.isArray) {
@@ -347,7 +347,7 @@ class NameResolutionVisitor(
                                 )
                             }
 
-                            if (getCurrentLeftHandSide() != null) {
+                            if (isLValue(nameNode)) {
                                 val serializedFullName = serializeName(qualifiedName)
                                 throw TypeCheckingError("Tried to assign to $serializedFullName, which is final.")
                             }
@@ -377,7 +377,7 @@ class NameResolutionVisitor(
                         }
                     }
 
-                    NameNodeReclassification.Method -> {
+                    NameNodeClassification.Method -> {
                         val serializedAmbiguousPrefix = serializeName(ambiguousPrefixName)
                         throw TypeCheckingError("Ambiguous name \"$serializedAmbiguousPrefix\" illegally resolved to Method.")
                     }
@@ -405,7 +405,7 @@ class NameResolutionVisitor(
                     val type = getDeclarationType(declaration)
                     nameNode.setType(type)
 
-                    nameNode.setNameNodeClassification(NameNodeReclassification.Expression)
+                    nameNode.setNameNodeClassification(NameNodeClassification.Expression)
                     return
                 }
 
@@ -415,11 +415,11 @@ class NameResolutionVisitor(
                     nameNode.setType(type)
                     addNameResolution(nameNode, typeDeclaration)
 
-                    nameNode.setNameNodeClassification(NameNodeReclassification.Type)
+                    nameNode.setNameNodeClassification(NameNodeClassification.Type)
                     return
                 }
 
-                nameNode.setNameNodeClassification(NameNodeReclassification.Package)
+                nameNode.setNameNodeClassification(NameNodeClassification.Package)
                 return
             }
 
@@ -431,7 +431,7 @@ class NameResolutionVisitor(
                 val identifier = qualifiedName.getChild("IDENTIFIER").lexeme
 
                 when (ambiguousPrefixName.getNameNodeClassification()) {
-                    NameNodeReclassification.Package -> {
+                    NameNodeClassification.Package -> {
                         val packageName = serializeName(ambiguousPrefixName)
 
                         if (
@@ -444,15 +444,15 @@ class NameResolutionVisitor(
                             val type = Type(typeDeclaration, false)
                             nameNode.setType(type)
 
-                            nameNode.setNameNodeClassification(NameNodeReclassification.Type)
+                            nameNode.setNameNodeClassification(NameNodeClassification.Type)
                             return
                         }
 
-                        nameNode.setNameNodeClassification(NameNodeReclassification.Package)
+                        nameNode.setNameNodeClassification(NameNodeClassification.Package)
                         return
                     }
 
-                    NameNodeReclassification.Type -> {
+                    NameNodeClassification.Type -> {
                         val classDeclaration = ambiguousPrefixName.getDeclaration()
 
                         if (classDeclaration.name != "ClassDeclaration") {
@@ -474,7 +474,7 @@ class NameResolutionVisitor(
                             val type = getDeclarationType(matchingStaticMemberDeclaration)
                             nameNode.setType(type)
 
-                            nameNode.setNameNodeClassification(NameNodeReclassification.Expression)
+                            nameNode.setNameNodeClassification(NameNodeClassification.Expression)
                             return
                         }
 
@@ -482,7 +482,7 @@ class NameResolutionVisitor(
                         throw NameResolutionError("Prefix \"$qualifiedClassName\" is TypeName, but member \"$identifier\" doesn't exist in the type.")
                     }
 
-                    NameNodeReclassification.Expression -> {
+                    NameNodeClassification.Expression -> {
                         val expressionType = ambiguousPrefixName.getType()
                         val currentClass = getCurrentClassDeclaration()
 
@@ -507,7 +507,7 @@ class NameResolutionVisitor(
                                 val type = getDeclarationType(matchingFieldDeclaration)
                                 nameNode.setType(type)
 
-                                nameNode.setNameNodeClassification(NameNodeReclassification.Expression)
+                                nameNode.setNameNodeClassification(NameNodeClassification.Expression)
                                 return
                             }
 
@@ -521,7 +521,7 @@ class NameResolutionVisitor(
                         }
                     }
 
-                    NameNodeReclassification.Method -> {
+                    NameNodeClassification.Method -> {
                         val serializedAmbiguousPrefix = serializeName(ambiguousPrefixName)
                         throw TypeCheckingError("Ambiguous name \"$serializedAmbiguousPrefix\" illegally resolved to Method.")
                     }
@@ -1131,7 +1131,7 @@ class NameResolutionVisitor(
 
     override fun visitPackageDeclaration(node: CSTNode) {
         val nameNode = node.getChild("Name")
-        nameNode.setNameNodeClassification(NameNodeReclassification.Package)
+        nameNode.setNameNodeClassification(NameNodeClassification.Package)
     }
 
     /**
@@ -1282,6 +1282,8 @@ class NameResolutionVisitor(
         val indexOfSelectedConstructorDeclaration = listOfConstructorFormalParameterTypes.indexOf(actualParameterTypes)
         val selectedConstructorDeclaration = listOfConstructorDeclarations[indexOfSelectedConstructorDeclaration]
 
+        node.setDeclaration(selectedConstructorDeclaration)
+
         if ("protected" in getModifiers(selectedConstructorDeclaration)) {
             val currentClassDeclaration = getCurrentClassDeclaration()
             val isConstructorInSamePackage = packageManager.getPackageNameOfType(classBeingInstantiated) == packageManager.getPackageNameOfType(currentClassDeclaration)
@@ -1332,7 +1334,7 @@ class NameResolutionVisitor(
             "Name" -> {
                 val nameNode = node.getChild("Name")
                 resolveTypeName(nameNode)
-                this.visit(node.getChild("UnaryExpressionNotPlusMinus"))
+                visit(node.getChild("UnaryExpressionNotPlusMinus"))
             }
 
             "Expression" -> {
@@ -1342,7 +1344,7 @@ class NameResolutionVisitor(
 
                 expressionNode.setType(nameNode.getType())
 
-                this.visit(node.getChild("UnaryExpressionNotPlusMinus"))
+                visit(node.getChild("UnaryExpressionNotPlusMinus"))
             }
             else -> {
                 super.visitCastExpression(node)
@@ -1538,6 +1540,15 @@ class NameResolutionVisitor(
         }
     }
 
+    fun isLValue(node: CSTNode): Boolean {
+        val leftHandSide = getCurrentLeftHandSide()
+        if (leftHandSide == null) {
+            return false
+        }
+
+        return leftHandSide.children[0] == node
+    }
+
     fun getCurrentLeftHandSide(): CSTNode? {
         return currentLeftHandSide
     }
@@ -1599,7 +1610,7 @@ class NameResolutionVisitor(
 
         if (node.children[0].name == "Name") {
             val nameNode = node.getChild("Name")
-            nameNode.setNameNodeClassification(NameNodeReclassification.Method)
+            nameNode.setNameNodeClassification(NameNodeClassification.Method)
 
             if (nameNode.children[0].name == "SimpleName") {
                 val simpleName = nameNode.getChild("SimpleName")
@@ -1631,6 +1642,7 @@ class NameResolutionVisitor(
                 validateUsageOfMethodInvocation(methodDeclarationNode)
 
                 addNameResolution(nameNode, methodDeclarationNode)
+                nameNode.setNameNodeClassification(NameNodeClassification.Method)
                 node.setType(getDeclarationType(methodDeclarationNode))
             } else {
                 val qualifiedName = nameNode.getChild("QualifiedName")
@@ -1638,15 +1650,15 @@ class NameResolutionVisitor(
                 val ambiguousPrefixName = qualifiedName.getChild("Name")
                 resolveAmbiguousName(ambiguousPrefixName)
 
-                val serializedAmbiguousPrefix = ambiguousPrefixName.getDescendants("IDENTIFIER").map({ it.lexeme }).joinToString(".")
+                val serializedAmbiguousPrefix = serializeName(ambiguousPrefixName)
 
                 when (ambiguousPrefixName.getNameNodeClassification()) {
-                    NameNodeReclassification.Package -> {
+                    NameNodeClassification.Package -> {
                         val packageName = serializedAmbiguousPrefix
                         throw NameResolutionError("Tried to call method \"$methodName\" on package \"$packageName\"")
                     }
 
-                    NameNodeReclassification.Type -> {
+                    NameNodeClassification.Type -> {
                         val resolvedType = ambiguousPrefixName.getType()
                         val typeDeclaration = resolvedType.type
                         val currentClass = getCurrentClassDeclaration()
@@ -1676,17 +1688,30 @@ class NameResolutionVisitor(
                         node.setType(getDeclarationType(resolvedStaticMethod))
                     }
 
-                    NameNodeReclassification.Expression -> {
+                    NameNodeClassification.Expression -> {
                         val resolvedType = ambiguousPrefixName.getType()
                         val resolvedTypeDeclaration = resolvedType.type
                         val currentClass = getCurrentClassDeclaration()
 
-                        if (resolvedType.isNumeric() || resolvedType.isBoolean() || resolvedType.isNull()) {
-                            throw TypeCheckingError("Tried to invoke method \"$methodName\" on an expression with a primitive type \"${resolvedTypeDeclaration.name}\"")
-                        }
+                        val accessibleInstanceMethods =
+                            if (!resolvedType.isArray) {
+                                if (resolvedType.isNumeric() || resolvedType.isBoolean() || resolvedType.isNull()) {
+                                    throw TypeCheckingError("Tried to invoke method \"$methodName\" on an expression with a primitive type \"${resolvedTypeDeclaration.name}\"")
+                                }
 
-                        val accessibleInstanceMethods = packageManager.getAccessibleInstanceMembers(currentClass, resolvedTypeDeclaration)
-                            .filter({ it.name in listOf("MethodDeclaration", "AbstractMethodDeclaration") })
+                                packageManager.getAccessibleInstanceMembers(currentClass, resolvedTypeDeclaration)
+                                    .filter({ it.name in listOf("MethodDeclaration", "AbstractMethodDeclaration") })
+                            } else {
+                                val baseClass = packageManager.getJavaLangType("Object")
+                                val cloneableInterface = packageManager.getJavaLangType("Cloneable")
+                                val serializableInterface = packageManager.getJavaIOType("Serializable")
+
+                                listOf(baseClass, cloneableInterface, serializableInterface)
+                                    .filterNotNull()
+                                    .flatMap({ type ->
+                                        type.getDescendants({ it.name in listOf("AbstractMethodDeclaration", "MethodDeclaration")})
+                                    })
+                            }
 
                         val resolvedInstanceMethod = accessibleInstanceMethods.find({ methodDeclaration ->
                             if (getDeclarationName(methodDeclaration) != methodName) {
@@ -1700,14 +1725,14 @@ class NameResolutionVisitor(
                         })
 
                         if (resolvedInstanceMethod == null) {
-                            throw TypeCheckingError("Tried to invoke instance method \"${getDeclarationName(resolvedTypeDeclaration)}.$methodName\" from class ${getDeclarationName(currentClass)}, but none found.")
+                            throw TypeCheckingError("Tried to invoke instance method \"$methodName\" from class ${getDeclarationName(currentClass)}, but none found.")
                         }
 
                         addNameResolution(nameNode, resolvedInstanceMethod)
                         node.setType(getDeclarationType(resolvedInstanceMethod))
                     }
 
-                    NameNodeReclassification.Method -> {
+                    NameNodeClassification.Method -> {
                         throw TypeCheckingError("Ambiguous name illegally resolved to MethodName")
                     }
                 }
@@ -1751,7 +1776,7 @@ class NameResolutionVisitor(
      */
     override fun visitTypeImportOnDemandDeclaration(node: CSTNode) {
         val nameNode = node.getChild("Name")
-        nameNode.setNameNodeClassification(NameNodeReclassification.Package)
+        nameNode.setNameNodeClassification(NameNodeClassification.Package)
     }
 
     override fun visitType(node: CSTNode) {
@@ -1953,19 +1978,19 @@ class NameResolutionVisitor(
             val typeOfMultiplicativeExpression = node.getChild("MultiplicativeExpression").getType()
 
             val stringDeclaration = packageManager.getJavaLangType("String")
+            val stringType = Type(stringDeclaration!!, false)
 
-            if (typeOfAdditiveExpression.type !== stringDeclaration && typeOfMultiplicativeExpression.type !== stringDeclaration) {
+            if (typeOfAdditiveExpression !== stringType && typeOfMultiplicativeExpression !== stringType) {
                 if (!typeOfAdditiveExpression.isNumeric() || !typeOfMultiplicativeExpression.isNumeric()) {
                     throw TypeCheckingError("In AdditiveExpression, tried to add non-numeric values where neither of them are strings")
                 }
 
                 node.setType(Type(CSTNode("int"), false))
             } else {
-                if (typeOfAdditiveExpression.type === stringDeclaration && typeOfMultiplicativeExpression.type.name == "void" ||
-                    typeOfMultiplicativeExpression.type == stringDeclaration && typeOfAdditiveExpression.type.name == "void") {
+                if (typeOfMultiplicativeExpression.type.name == "void" || typeOfAdditiveExpression.type.name == "void") {
                     throw TypeCheckingError("In AdditiveExpression, tried to add a void type to a String.")
                 }
-                node.setType(Type(stringDeclaration, false))
+                node.setType(stringType)
             }
         }
     }
@@ -2048,7 +2073,7 @@ class NameResolutionVisitor(
                 throw TypeCheckingError("Tried to access non-length field of an array")
             }
 
-            if (getCurrentLeftHandSide() != null) {
+            if (isLValue(node)) {
                 throw TypeCheckingError("In \"FieldAccess\", detected an \"array.length\" within a \"LeftHandSide\". This implies that you may be writing to final \"length\" property of an array.")
             }
 

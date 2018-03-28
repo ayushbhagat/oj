@@ -21,23 +21,26 @@ fun main(args: Array<String>) {
     }
 
     val filenames = args.toList()
+
 //    val filenames = listOf(
-//        "./test/marmoset/stdlib/4.0/java/io/OutputStream.java",
-//        "./test/marmoset/stdlib/4.0/java/io/PrintStream.java",
-//        "./test/marmoset/stdlib/4.0/java/io/Serializable.java",
-//        "./test/marmoset/stdlib/4.0/java/lang/Boolean.java",
-//        "./test/marmoset/stdlib/4.0/java/lang/Byte.java",
-//        "./test/marmoset/stdlib/4.0/java/lang/Character.java",
-//        "./test/marmoset/stdlib/4.0/java/lang/Class.java",
-//        "./test/marmoset/stdlib/4.0/java/lang/Cloneable.java",
-//        "./test/marmoset/stdlib/4.0/java/lang/Integer.java",
-//        "./test/marmoset/stdlib/4.0/java/lang/Number.java",
-//        "./test/marmoset/stdlib/4.0/java/lang/Object.java",
-//        "./test/marmoset/stdlib/4.0/java/lang/Short.java",
-//        "./test/marmoset/stdlib/4.0/java/lang/String.java",
-//        "./test/marmoset/stdlib/4.0/java/lang/System.java",
-//        "./test/marmoset/stdlib/4.0/java/util/Arrays.java",
-//        "./test/marmoset/a4/J1_7_Reachability_WhileTrue_ConstantFolding.java"
+//        "./test/marmoset/stdlib/3.0/java/io/OutputStream.java",
+//        "./test/marmoset/stdlib/3.0/java/io/PrintStream.java",
+//        "./test/marmoset/stdlib/3.0/java/io/Serializable.java",
+//        "./test/marmoset/stdlib/3.0/java/lang/Boolean.java",
+//        "./test/marmoset/stdlib/3.0/java/lang/Byte.java",
+//        "./test/marmoset/stdlib/3.0/java/lang/Character.java",
+//        "./test/marmoset/stdlib/3.0/java/lang/Class.java",
+//        "./test/marmoset/stdlib/3.0/java/lang/Cloneable.java",
+//        "./test/marmoset/stdlib/3.0/java/lang/Integer.java",
+//        "./test/marmoset/stdlib/3.0/java/lang/Number.java",
+//        "./test/marmoset/stdlib/3.0/java/lang/Object.java",
+//        "./test/marmoset/stdlib/3.0/java/lang/Short.java",
+//        "./test/marmoset/stdlib/3.0/java/lang/String.java",
+//        "./test/marmoset/stdlib/3.0/java/lang/System.java",
+//        "./test/marmoset/stdlib/3.0/java/util/Arrays.java",
+//        "./test/marmoset/a2/J1_4_PackageClashWithType_SingleTypeImport_DefaultPackage/foo.java",
+//        "./test/marmoset/a2/J1_4_PackageClashWithType_SingleTypeImport_DefaultPackage/foo/bar.java",
+//        "./test/marmoset/a2/J1_4_PackageClashWithType_SingleTypeImport_DefaultPackage/Main.java"
 //    )
 
     try {
@@ -112,7 +115,7 @@ fun main(args: Array<String>) {
         val packageManager = PackageManager(packages)
         NameResolver.resolveNames(packageManager)
         SyntaxAnalyzer.analyze(packageManager)
-        CodeGenerator.generateCode(packageManager)
+//        CodeGenerator.generateCode(packageManager)
 
     } catch (e: Exception) {
         e.printStackTrace()

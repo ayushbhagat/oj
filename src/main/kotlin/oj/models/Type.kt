@@ -31,6 +31,10 @@ data class Type(val type: CSTNode, val isArray: Boolean) {
         return type.name in listOf("ClassDeclaration", "InterfaceDeclaration") || isArray
     }
 
+    fun isPrimitive(): Boolean {
+        return !isReference() && !isArray
+    }
+
     fun isNull(): Boolean {
         return type.name == "NULL" && !isArray
     }
@@ -41,5 +45,16 @@ data class Type(val type: CSTNode, val isArray: Boolean) {
 
     fun isBoolean(): Boolean {
         return type.name == "boolean" && !isArray
+    }
+
+    override fun toString(): String {
+        val typeName =
+            if (type.name in listOf("ClassDeclaration", "InterfaceDeclaration")) {
+                getDeclarationName(type)
+            } else {
+                type.name
+            }
+
+        return typeName + if (isArray) "[]" else ""
     }
 }
