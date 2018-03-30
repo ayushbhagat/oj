@@ -4,8 +4,8 @@ import java.util.*
 
 open class CSTNodeError(reason: String): Exception(reason)
 
-class FoundNoChild: CSTNodeError("Found no descendants, expected 1.")
-class FoundManyChildren: CSTNodeError("Found many descendants, expected 1.")
+class FoundNoChild: CSTNodeError("Found no child, expected 1.")
+class FoundManyChildren: CSTNodeError("Found many children, expected 1.")
 
 class FoundNoDescendant : CSTNodeError("Found no descendants, expected 1.")
 class FoundManyDescendants: CSTNodeError("Found many descendants, expected 1.")
@@ -404,7 +404,8 @@ fun isInterfaceImplementedByClass(interfaceDeclaration: CSTNode, classDeclaratio
                 return true
             }
 
-            queue.addAll(interfaceBeingExamined.getChild("ExtendsInterfaceOpt").getDescendants("Name").map({ it.getDeclaration() }))
+
+            queue.addAll(interfaceBeingExamined.getChild("ExtendsInterfacesOpt").getDescendants("Name").map({ it.getDeclaration() }))
         }
 
         val superOpt = currentClass.getChild("SuperOpt")

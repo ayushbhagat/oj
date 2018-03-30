@@ -1,6 +1,7 @@
 package oj.nameresolver
 
 import oj.models.*
+import java.util.*
 
 open class NameResolutionError(reason: String) : Exception(reason)
 open class TypeCheckingError(reason: String): Exception(reason)
@@ -19,7 +20,7 @@ open class InterfaceExtendsAnotherMoreThanOnce(interfaceName: String, duplicateI
 open class InterfaceExtendsNonInterface(interfaceName: String, nonInterfaceName: String) : HierarchyCheckingError("Interface \"$interfaceName\" extends a non-interface \"$nonInterfaceName\"")
 open class DuplicateMethodsDetectedInInterface(interfaceName: String, methodName: String): HierarchyCheckingError("Detected a duplicate method \"$methodName\" in interface \"$interfaceName\"")
 open class TwoMethodsInInterfaceHierarchyWithSameSignatureButDifferentReturnTypes(interfaceName: String, methodName: String): HierarchyCheckingError("Two methods with the same name, \"$methodName\", but different return type exist in the interface hierarchy (including interface methods) of interface \"$interfaceName\"")
-open class ConcreteMethodImplementsPublicMethodWithProtectedVisibility(className: String, methodName: String) : HierarchyCheckingError("Concrete method \"$className.$methodName\" implements \"public\" method with \"protected\" visibility.")
+open class ConcreteMethodImplementsPublicMethodWithProtectedVisibility(className: String, methodName: String) : HierarchyCheckingError("Concrete method \"$className.$methodName\" has \"protected\" visibility, but it implements a \"public\" method.")
 open class TriedToAccessStaticMemberOnNonClassDeclaration(nodeType: String, declarationName: String) : NameResolutionError("Tried to access static field or method on type \"$nodeType\" node called \"$declarationName\". Statics are only supported on classes.")
 open class TriedToAccessFieldOfPrimitiveType(expressionName: String, expressionType: String) : NameResolutionError("Tried to access field of \"$expressionName\", which is of primitive type \"$expressionType\"")
 
@@ -39,7 +40,7 @@ class NameResolutionVisitor(
     private var importOnDemandDeclarationEnvironment: Environment = Environment()
     private var currentFieldDeclaration: CSTNode? = null
     private var currentMethodDeclaration: CSTNode? = null
-    private var currentLeftHandSide: CSTNode? = null
+    private var leftHandSideStack = LinkedList<CSTNode>()
     private var currentLocalVariableDeclaration: CSTNode? = null
     private var isCurrentLocalVariableDeclarationInitialized: Boolean = false
 
@@ -774,17 +775,19 @@ class NameResolutionVisitor(
 
             // Apply concrete methods to unshadowed unimplemented methods
 
-            val remainingUnimplementedAbstractInterfaceMethods = unshadowedPotentiallyUnimplementedInterfaceMethods.filter({ unimplementedInterfaceMethod ->
-                concreteMethods.filter({ concreteMethod ->
-                    if (canMethodsReplaceOneAnother(concreteMethod.getChild("MethodHeader"), unimplementedInterfaceMethod.getChild("MethodHeader"))) {
-                        if ("protected" in getModifiers(concreteMethod) && "public" in getModifiers(unimplementedInterfaceMethod)) {
-                            throw ConcreteMethodImplementsPublicMethodWithProtectedVisibility(className, getDeclarationName(concreteMethod))
-                        }
-                        true
-                    } else {
-                        false
+            val canConcreteMethodImplementAbstractMethod = { concreteMethod: CSTNode, abstractMethod: CSTNode ->
+                if (canMethodsReplaceOneAnother(concreteMethod, abstractMethod)) {
+                    if ("protected" in getModifiers(concreteMethod) && "public" in getModifiers(abstractMethod)) {
+                        throw ConcreteMethodImplementsPublicMethodWithProtectedVisibility(className, getDeclarationName(concreteMethod))
                     }
-                }).isEmpty()
+                    true
+                } else {
+                    false
+                }
+            }
+
+            val remainingUnimplementedAbstractInterfaceMethods = unshadowedPotentiallyUnimplementedInterfaceMethods.filter({ unimplementedInterfaceMethod ->
+                concreteMethods.filter({ concreteMethod -> canConcreteMethodImplementAbstractMethod(concreteMethod, unimplementedInterfaceMethod) }).isEmpty()
             })
 
             val superNames = classDeclaration.getChild("SuperOpt").getDescendants("Name")
@@ -801,7 +804,7 @@ class NameResolutionVisitor(
 
                 val finalUnimplementedAbstractInterfaceMethods = remainingUnimplementedAbstractInterfaceMethods.filter({ unimplementedInterfaceMethod ->
                     baseSuperClassConcreteMethods.filter({ concreteMethod ->
-                        canMethodsReplaceOneAnother(concreteMethod.getChild("MethodHeader"), unimplementedInterfaceMethod.getChild("MethodHeader"))
+                        canConcreteMethodImplementAbstractMethod(concreteMethod, unimplementedInterfaceMethod)
                     }).isEmpty()
                 })
 
@@ -869,13 +872,6 @@ class NameResolutionVisitor(
          * A method must not replace a final method.
          */
         ownMethodsMustNotReplaceInheritedMethods({ true }, { "final" in getModifiers(it) })
-
-        /**
-         * TEST
-         *
-         * A protected method must not implement a
-         */
-
 
         /**
          *
@@ -1086,15 +1082,14 @@ class NameResolutionVisitor(
         })
 
         fun ownMethodsMustNotReplaceInheritedMethods(ownPredicate: (CSTNode) -> Boolean, inheritedPredicate: (CSTNode) -> Boolean) {
-            val inheritedAndFinalMethodDeclarations = allMethodDeclarations.filter({ inheritedOrOwnMethod ->
-                inheritedPredicate(inheritedOrOwnMethod) &&
-                abstractMethodDeclarations.filter({ ownMethod ->
-                    inheritedOrOwnMethod !== ownMethod && ownPredicate(ownMethod)
-                }).isNotEmpty()
-            })
-            abstractMethodDeclarations.forEach({interfaceMethod ->
+            val filteredOwnMethods = abstractMethodDeclarations.filter({ ownMethod -> ownPredicate(ownMethod) })
+            val filteredAllMethods = allMethodDeclarations.filter({ inheritedOrOwnMethod -> inheritedPredicate(inheritedOrOwnMethod) })
+
+            val inheritedAndFinalMethodDeclarations = filteredAllMethods - filteredOwnMethods
+
+            filteredOwnMethods.forEach({interfaceMethod ->
                 inheritedAndFinalMethodDeclarations.forEach(fun (inheritedInterfaceMethod: CSTNode) {
-                    if (canMethodsReplaceOneAnother(interfaceMethod.getChild("MethodHeader"), inheritedInterfaceMethod.getChild("MethodHeader"))) {
+                    if (canMethodsReplaceOneAnother(interfaceMethod, inheritedInterfaceMethod)) {
                         throw IllegalMethodReplacement(interfaceName, getDeclarationName(interfaceMethod))
                     }
                 })
@@ -1114,7 +1109,7 @@ class NameResolutionVisitor(
          *
          * A protected method must not replace a public method
          */
-        ownMethodsMustNotReplaceInheritedMethods({ "public" in getModifiers(it)}, { "protected" in getModifiers(it) })
+        ownMethodsMustNotReplaceInheritedMethods({ "protected" in getModifiers(it)}, { "public" in getModifiers(it) })
     }
 
     private fun getCurrentClassDeclaration(): CSTNode {
@@ -1550,7 +1545,11 @@ class NameResolutionVisitor(
     }
 
     fun getCurrentLeftHandSide(): CSTNode? {
-        return currentLeftHandSide
+        if (leftHandSideStack.isEmpty()) {
+            return null
+        }
+
+        return leftHandSideStack.peek()
     }
 
     /**
@@ -1558,7 +1557,7 @@ class NameResolutionVisitor(
      * As the left-hand operand of an assignment operator (§15.26)
      */
     override fun visitLeftHandSide(node: CSTNode) {
-        currentLeftHandSide = node
+        leftHandSideStack.push(node)
         try {
             val nameNode = node.getChild("Name")
             resolveExpressionName(nameNode)
@@ -1567,7 +1566,7 @@ class NameResolutionVisitor(
 
         super.visitLeftHandSide(node)
         node.setType(node.children[0].getType())
-        currentLeftHandSide = null
+        leftHandSideStack.pop()
     }
 
     fun validateUsageOfMethodInvocation(methodDeclarationNode: CSTNode) {
@@ -1980,7 +1979,7 @@ class NameResolutionVisitor(
             val stringDeclaration = packageManager.getJavaLangType("String")
             val stringType = Type(stringDeclaration!!, false)
 
-            if (typeOfAdditiveExpression !== stringType && typeOfMultiplicativeExpression !== stringType) {
+            if (typeOfAdditiveExpression != stringType && typeOfMultiplicativeExpression != stringType) {
                 if (!typeOfAdditiveExpression.isNumeric() || !typeOfMultiplicativeExpression.isNumeric()) {
                     throw TypeCheckingError("In AdditiveExpression, tried to add non-numeric values where neither of them are strings")
                 }
@@ -2088,24 +2087,27 @@ class NameResolutionVisitor(
                 throw TypeCheckingError("No field \"$fieldName\" found in class ${getDeclarationName(typeOfPrimary.type)}")
             }
 
+            node.getChild("IDENTIFIER").setDeclaration(matchingField)
             node.setType(getDeclarationType(matchingField))
         }
     }
 
     override fun visitConstructorDeclaration(node: CSTNode) {
-        super.visitConstructorDeclaration(node)
+        environment.withNewScope({
+            super.visitConstructorDeclaration(node)
 
-        val currentClass = getCurrentClassDeclaration()
-        val superOpt = currentClass.getChild("SuperOpt")
-        if (superOpt.children.size == 1) {
-            val superClassNameNode = superOpt.getDescendant("Name")
-            val superClass = superClassNameNode.getDeclaration()
-            val superClassConstructors = superClass.getChild("ClassBody").getDescendants("ConstructorDeclaration")
-            val emptyParamSuperClassConstructors = superClassConstructors.filter({ it.getChild("ConstructorDeclarator").getChild("FormalParameterListOpt").children.size == 0 })
-            if (emptyParamSuperClassConstructors.size == 0) {
-                throw TypeCheckingError("Super class constructor does not have a constructor with empty parameters defined.")
+            val currentClass = getCurrentClassDeclaration()
+            val superOpt = currentClass.getChild("SuperOpt")
+            if (superOpt.children.size == 1) {
+                val superClassNameNode = superOpt.getDescendant("Name")
+                val superClass = superClassNameNode.getDeclaration()
+                val superClassConstructors = superClass.getChild("ClassBody").getDescendants("ConstructorDeclaration")
+                val emptyParamSuperClassConstructors = superClassConstructors.filter({ it.getChild("ConstructorDeclarator").getChild("FormalParameterListOpt").children.size == 0 })
+                if (emptyParamSuperClassConstructors.size == 0) {
+                    throw TypeCheckingError("Super class constructor does not have a constructor with empty parameters defined.")
+                }
             }
-        }
+        })
     }
 
     override fun visitIfThenStatement(node: CSTNode) {
@@ -2154,7 +2156,9 @@ class NameResolutionVisitor(
     }
 
     override fun visitForStatement(node: CSTNode) {
-        super.visitForStatement(node)
+        environment.withNewScope({
+            super.visitForStatement(node)
+        })
 
         val expressionOpt = node.getChild("ExpressionOpt")
 
@@ -2167,7 +2171,9 @@ class NameResolutionVisitor(
     }
 
     override fun visitForStatementNoShortIf(node: CSTNode) {
-        super.visitForStatementNoShortIf(node)
+        environment.withNewScope({
+            super.visitForStatementNoShortIf(node)
+        })
 
         val expressionOpt = node.getChild("ExpressionOpt")
 

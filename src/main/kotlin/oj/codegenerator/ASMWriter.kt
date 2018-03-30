@@ -21,7 +21,7 @@ class ASMWriter {
     fun write(line: String = "") {
         val indentString =
             if (line == "\n" || line.isEmpty()) "" else {
-                IntRange(0, indent - 1).map({ '\t' }).joinToString(".")
+                IntRange(0, indent - 1).map({ '\t' }).joinToString("")
             }
 
         code += "$indentString$line"

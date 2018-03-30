@@ -571,12 +571,12 @@ class PackageManager(
 
     }
 
-    fun getClassDeclarationLabel(classDeclaration: CSTNode): String {
-        if (classDeclaration.name != "ClassDeclaration") {
-            throw PackageManagerError("Tried to get label of non-class declaration CSTNode ${classDeclaration.name}")
+    fun getClassOrInterfaceDeclarationLabel(classOrInterface: CSTNode): String {
+        if (classOrInterface.name !in setOf("ClassDeclaration", "InterfaceDeclaration")) {
+            throw PackageManagerError("Tried to get label of CSTNode \"${classOrInterface.name}\", which is neither a \"ClassDeclaration\" nor an \"InterfaceDeclaration\"")
         }
 
-        val packageName = getPackageNameOfType(classDeclaration)
+        val packageName = getPackageNameOfType(classOrInterface)
         val packageLabel =
             if (packageName.isEmpty()) {
                 "#"
@@ -584,7 +584,7 @@ class PackageManager(
                 packageName.replace('.', '#')
             }
 
-        return packageLabel + getDeclarationName(classDeclaration)
+        return "$packageLabel#${getDeclarationName(classOrInterface)}"
     }
 
     private val classMemberLabelMap = mutableMapOf<CSTNode, String>()
@@ -599,7 +599,11 @@ class PackageManager(
             throw PackageManagerError("Tried to get label for a non-member \"${memberDeclaration.name}\" of class \"$className\"")
         }
 
-        val classDeclarationLabel = getClassDeclarationLabel(classDeclaration)
+        if (memberDeclaration.name == "MethodDeclaration" && "native" in getModifiers(memberDeclaration)) {
+            return "NATIVE${getQualifiedDeclarationName(classDeclaration)}.${getDeclarationName(memberDeclaration)}"
+        }
+
+        val classDeclarationLabel = getClassOrInterfaceDeclarationLabel(classDeclaration)
 
         if (memberDeclaration.name == "FieldDeclaration") {
             val fieldName = getDeclarationName(memberDeclaration)
@@ -628,7 +632,7 @@ class PackageManager(
 
         val serializedFormalParameters = formalParameterTypes.map({ formalParameterType ->
             if (formalParameterType.type.name in setOf("ClassDeclaration", "InterfaceDeclaration")) {
-                getClassDeclarationLabel(formalParameterType.type)
+                getClassOrInterfaceDeclarationLabel(formalParameterType.type)
             } else {
                 formalParameterType.type.name
             } + if (formalParameterType.isArray) "?" else ""
@@ -682,7 +686,7 @@ class PackageManager(
             throw PackageManagerError("Tried to get instance field initializer label of non-class declaration CSTNode ${classDeclaration.name}")
         }
 
-        val classLabel = getClassDeclarationLabel(classDeclaration)
+        val classLabel = getClassOrInterfaceDeclarationLabel(classDeclaration)
         return "INSTANCE_FIELD_INITIALIZERS#$classLabel"
     }
 
@@ -691,7 +695,7 @@ class PackageManager(
             throw PackageManagerError("Tried to get instance field initializer label of non-class declaration CSTNode ${classDeclaration.name}")
         }
 
-        val classLabel = getClassDeclarationLabel(classDeclaration)
+        val classLabel = getClassOrInterfaceDeclarationLabel(classDeclaration)
         return "STATIC_FIELD_INITIALIZERS#$classLabel"
     }
 
@@ -700,7 +704,7 @@ class PackageManager(
             throw PackageManagerError("Tried to get static fields definition label of non-class declaration CSTNode ${classDeclaration.name}")
         }
 
-        val classLabel = getClassDeclarationLabel(classDeclaration)
+        val classLabel = getClassOrInterfaceDeclarationLabel(classDeclaration)
         return "STATIC_FIELDS#$classLabel"
     }
 
@@ -709,7 +713,7 @@ class PackageManager(
             throw PackageManagerError("Tried to get VTable label of non-class declaration CSTNode ${classDeclaration.name}")
         }
 
-        val classLabel = getClassDeclarationLabel(classDeclaration)
+        val classLabel = getClassOrInterfaceDeclarationLabel(classDeclaration)
         return "V_TABLE#$classLabel"
     }
 
@@ -718,7 +722,7 @@ class PackageManager(
             throw PackageManagerError("Tried to get VTable label of non-class declaration CSTNode ${classDeclaration.name}")
         }
 
-        val classLabel = getClassDeclarationLabel(classDeclaration)
+        val classLabel = getClassOrInterfaceDeclarationLabel(classDeclaration)
         return "SELECTOR_INDEXED_TABLE#$classLabel"
     }
 
@@ -726,12 +730,10 @@ class PackageManager(
 
     fun getAllInterfaceMethodsInProgram(): List<CSTNode> {
         if (allInterfaceMethodsInProgram == null) {
-            allInterfaceMethodsInProgram = packages.flatMap({(_, compilationUnits) ->
-                compilationUnits
-                    .map({ compilationUnit -> compilationUnit.getDescendant(isClassOrInterfaceDeclaration)})
-                    .filter({ type -> type.name == "InterfaceDeclaration" })
-                    .flatMap({ it.getDescendants("AbstractMethodDeclaration") })
-            })
+            allInterfaceMethodsInProgram = packages.values.flatten()
+                .map({ compilationUnit -> compilationUnit.getDescendant(isClassOrInterfaceDeclaration)})
+                .filter({ type -> type.name == "InterfaceDeclaration" })
+                .flatMap({ it.getDescendants("AbstractMethodDeclaration") })
         }
 
         return allInterfaceMethodsInProgram!!
@@ -776,9 +778,17 @@ class PackageManager(
             if (typeDeclaration.type.name in primitiveTypes) {
                 typeDeclaration.type.name
             } else {
-                getClassDeclarationLabel(typeDeclaration.type)
+                getClassOrInterfaceDeclarationLabel(typeDeclaration.type)
             }
 
         return "SUPER_TYPE_TABLE#$typeName#${if (typeDeclaration.isArray) "ARRAY" else "NO_ARRAY" }"
+    }
+
+    fun getAllClasses(): List<CSTNode> {
+        return packages
+            .values
+            .flatten()
+            .map({ compilationUnit -> compilationUnit.getDescendant(isClassOrInterfaceDeclaration) })
+            .filter({ it.name == "ClassDeclaration" })
     }
 }

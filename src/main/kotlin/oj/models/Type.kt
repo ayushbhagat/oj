@@ -1,6 +1,6 @@
 package oj.models
 
-val primitiveTypes = setOf("byte", "short", "int", "char", "boolean", "NULL")
+val primitiveTypes = setOf("byte", "short", "int", "char", "boolean")
 
 class TypeError(reason: String): Exception(reason)
 
@@ -11,10 +11,11 @@ data class Type(val type: CSTNode, val isArray: Boolean) {
 
         if (other is Type) {
             val otherType = other.type
+            val primiteTypesAndNull = primitiveTypes + "NULL"
             val areTypesEqual =
-                if (otherType.name in primitiveTypes && type.name in primitiveTypes) {
+                if (otherType.name in primiteTypesAndNull && type.name in primiteTypesAndNull) {
                     otherType.name == type.name
-                } else if (otherType.name !in primitiveTypes && type.name !in primitiveTypes) {
+                } else if (otherType.name !in primiteTypesAndNull && type.name !in primiteTypesAndNull) {
                     otherType === type
                 } else {
                     false
@@ -32,7 +33,7 @@ data class Type(val type: CSTNode, val isArray: Boolean) {
     }
 
     fun isPrimitive(): Boolean {
-        return !isReference() && !isArray
+        return type.name in primitiveTypes && !isArray
     }
 
     fun isNull(): Boolean {

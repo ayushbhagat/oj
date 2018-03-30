@@ -1,6 +1,7 @@
 package oj.codegenerator
 
 import oj.models.*
+import java.util.*
 
 const val OBJECT_V_TABLE_POINTER_OFFSET = 0
 const val OBJECT_SELECTOR_INDEXED_TABLE_POINTER_OFFSET = 4
@@ -23,7 +24,8 @@ class CodeGenerationVisitor(
     private val localVariableDeclarationEnvironment = Environment()
     private val formalParameterEnvironment = Environment()
     private var currentClassDeclaration: CSTNode? = null
-    private var currentLeftHandSide: CSTNode? = null
+    private var leftHandSideStack: LinkedList<CSTNode> = LinkedList()
+    private var currentMethodDeclaration: CSTNode? = null
     private val stringLiteralDeclarations: MutableList<String> = mutableListOf()
 
     fun getCode(): String {
@@ -42,8 +44,6 @@ class CodeGenerationVisitor(
         asmWriter.withIndent(fn)
     }
 
-
-
     override fun visitClassDeclaration(node: CSTNode) {
         currentClassDeclaration = node
         try {
@@ -55,12 +55,43 @@ class CodeGenerationVisitor(
             /**
              * Write Externs
              */
+
+            writeComment("Externs for primitive arrays super type tables")
+            primitiveTypes
+                .map({ Type(CSTNode(it), true) })
+                .forEach({ primitiveArrayType ->
+                    val superTypeTableLabel = packageManager.getSuperTypeTableLabel(primitiveArrayType)
+                    writeLn("extern $superTypeTableLabel")
+                })
+            writeLn()
+
+            /**
+             * Extern runtime.s functions
+             */
+
+            writeComment("Externs for runtime.s")
+            writeLn("extern __malloc")
+            writeLn("extern __debexit")
+            writeLn("extern __exception")
+            writeLn()
+
+            val nativeMethods = node.getDescendants({ it.name == "MethodDeclaration" && "native" in getModifiers(it) })
+            writeComment("Extern own native methods")
+            nativeMethods.forEach({ nativeMethod ->
+                val nativeMethodLabel = packageManager.getClassMemberLabel(nativeMethod)
+                writeLn("extern $nativeMethodLabel")
+            })
+            writeLn()
+
+
             packageManager.packages.values
                 .flatMap({ compilationUnits -> compilationUnits })
                 .map({ compilationUnit -> compilationUnit.getDescendant(isClassOrInterfaceDeclaration) })
                 .filter({ type -> type.name == "ClassDeclaration" })
                 .filter({ classDeclaration -> classDeclaration != node })
                 .forEach({ classDeclaration ->
+                    writeComment("EXTERNS for ${packageManager.getQualifiedDeclarationName(classDeclaration)}")
+                    writeLn()
                     /**
                      * Extern constructors
                      */
@@ -104,6 +135,8 @@ class CodeGenerationVisitor(
                      */
                     writeLn("extern ${packageManager.getSuperTypeTableLabel(Type(classDeclaration, true))}")
                     writeLn("extern ${packageManager.getSuperTypeTableLabel(Type(classDeclaration, false))}")
+                    writeLn()
+                    writeLn()
                 })
 
             /**
@@ -124,16 +157,20 @@ class CodeGenerationVisitor(
              */
             val staticFields = node.getDescendants({ it.name == "FieldDeclaration" && "static" in getModifiers(it) })
             val classStaticFieldInitializerLabel = packageManager.getStaticFieldInitializerLabel(node)
+            val qualifiedClassName = packageManager.getQualifiedDeclarationName(node)
             withAssemblyMethodDeclaration(classStaticFieldInitializerLabel, {
                 staticFields.forEach({ staticField ->
                     if (staticField.children[2].name == "VariableDeclarator") {
+                        val qualifiedFieldName = "$qualifiedClassName.${getDeclarationName(staticField)}"
+                        writeComment("Initializer for $qualifiedFieldName")
                         val staticFieldVariableInitializer = staticField.getDescendant("VariableInitializer")
-                        writeComment("Initializer for ${getDeclarationName(staticField)}")
-                        withIndent({
-                            visit(staticFieldVariableInitializer)
-                        })
+                        visit(staticFieldVariableInitializer)
+                        writeLn()
+
+                        writeComment("$qualifiedFieldName = eax")
                         val staticFieldLabel = packageManager.getClassMemberLabel(staticField)
                         writeLn("mov [$staticFieldLabel], eax")
+                        writeLn()
                     }
                 })
             })
@@ -150,16 +187,19 @@ class CodeGenerationVisitor(
                     .forEach({(instanceField, i) ->
                         if (instanceField.children[2].name == "VariableDeclarator") {
                             val instanceFieldVariableInitializer = instanceField.getDescendant("VariableInitializer")
-                            writeComment("Initializer for ${getDeclarationName(instanceField)}")
-                            withIndent({
-                                visit(instanceFieldVariableInitializer)
-                            })
+                            val qualifiedFieldName = "Instance Field: $qualifiedClassName.${getDeclarationName(instanceField)}"
+                            writeComment("Initializer for $qualifiedFieldName")
+                            visit(instanceFieldVariableInitializer)
+                            writeLn()
+
+                            writeComment("$qualifiedFieldName = eax")
                             // This assumes that "this" will be pushed as the first argument to the stack when this label is called.
                             writeLn("mov ebx, ebp")
                             writeLn("add ebx, 8")
                             writeLn("mov ebx, [ebx]")
                             writeLn("add ebx, ${OBJECT_FIELD_OFFSET + i * 4}")
                             writeLn("mov [ebx], eax")
+                            writeLn()
                         }
                     })
             })
@@ -178,6 +218,7 @@ class CodeGenerationVisitor(
             withIndent({
                 staticFields.forEach({ staticField ->
                     val staticFieldLabel = packageManager.getClassMemberLabel(staticField)
+                    writeLn("global $staticFieldLabel")
                     writeLn("$staticFieldLabel: dd 0")
                 })
             })
@@ -187,6 +228,7 @@ class CodeGenerationVisitor(
              * Write VTable
              */
             val vTableLabel = packageManager.getVTableLabel(node)
+            writeLn("global $vTableLabel")
             writeLn("$vTableLabel:")
             withIndent({
                 packageManager
@@ -200,6 +242,7 @@ class CodeGenerationVisitor(
              * Write Selector Indexed Table
              */
             val selectorIndexedTableLabel = packageManager.getSelectorIndexedTableLabel(node)
+            writeLn("global $selectorIndexedTableLabel")
             writeLn("$selectorIndexedTableLabel:")
             withIndent({
                 val interfaceOverriddenMethods = packageManager.getClassOverriddenInstanceMethods(node)
@@ -232,12 +275,13 @@ class CodeGenerationVisitor(
             for (isArray in listOf(true, false)) {
                 val type = Type(node, isArray)
                 val superTypeTableLabel = packageManager.getSuperTypeTableLabel(type)
+                writeLn("global $superTypeTableLabel")
                 writeLn("$superTypeTableLabel:")
                 withIndent({
                     val superTypeTable = packageManager.getSuperTypeTable(type)
 
-                    superTypeTable.forEach({(_, isSuperType) ->
-                        writeLn("dd ${if (isSuperType) 1 else 0}")
+                    superTypeTable.forEach({(type, isSuperType) ->
+                        writeLn("dd ${if (isSuperType) 1 else 0} ;; $type")
                     })
                 })
                 writeLn()
@@ -259,9 +303,13 @@ class CodeGenerationVisitor(
 
     override fun visitReturnStatement(node: CSTNode) {
         // This should evaluate the return expression and place its result in eax
+        writeComment("Calculate the return Expression")
         super.visitReturnStatement(node)
+        writeLn()
 
+        writeComment("Return from method")
         writeLn("add esp, ${localVariableDeclarationEnvironment.size * 4}")
+        writeLn("pop ebp")
         writeLn("ret")
     }
 
@@ -274,9 +322,13 @@ class CodeGenerationVisitor(
         writeLn("global $label")
         writeLn("$label:")
         withIndent({
+            writeComment("Method preamble")
             writeLn("push ebp")
             writeLn("mov ebp, esp")
+            writeLn()
             fn()
+            writeLn()
+            writeComment("Method postamble")
             writeLn("pop ebp")
             writeLn("ret")
         })
@@ -284,36 +336,67 @@ class CodeGenerationVisitor(
 
     override fun visitConstructorDeclaration(node: CSTNode) {
         formalParameterEnvironment.withNewScope({
-            super.visit(node.getChild("Modifiers"))
-            super.visit(node.getChild("ConstructorDeclarator"))
+            localVariableDeclarationEnvironment.withNewScope({
+                val originalNumVariables = localVariableDeclarationEnvironment.size
 
-            withAssemblyMethodDeclaration(node, {
-                val currentClassDeclaration = getCurrentClassDeclaration()
-                val parentOfCurrentClass = packageManager.getSuperClass(currentClassDeclaration)
+                super.visit(node.getChild("Modifiers"))
+                super.visit(node.getChild("ConstructorDeclarator"))
 
-                if (parentOfCurrentClass != null) {
-                    val parentZeroArgumentConstructor = parentOfCurrentClass.getDescendant({
-                        it.name == "ConstructorDeclaration" && it.getChild("ConstructorDeclarator").getDescendants("FormalParameter").isEmpty()
-                    })
+                withAssemblyMethodDeclaration(node, {
+                    val currentClassDeclaration = getCurrentClassDeclaration()
+                    val parentOfCurrentClass = packageManager.getSuperClass(currentClassDeclaration)
 
-                    val parentZeroArgumentConstructorLabel = packageManager.getClassMemberLabel(parentZeroArgumentConstructor)
+                    if (parentOfCurrentClass != null) {
+                        val parentZeroArgumentConstructor = parentOfCurrentClass.getDescendant({
+                            it.name == "ConstructorDeclaration" && it.getChild("ConstructorDeclarator").getDescendants("FormalParameter").isEmpty()
+                        })
+
+                        val parentZeroArgumentConstructorLabel = packageManager.getClassMemberLabel(parentZeroArgumentConstructor)
+                        val stackOffsetOfThis = 8 + formalParameterEnvironment.size * 4
+
+                        writeComment("Retrieve `this` from method call arguments")
+                        writeLn("mov eax, ebp")
+                        writeLn("add eax, $stackOffsetOfThis")
+                        writeLn("mov eax, [eax]")
+                        writeLn()
+
+                        writeComment("Move parent's zero argument constructor method address into ebx")
+                        writeLn("mov ebx, $parentZeroArgumentConstructorLabel")
+                        writeLn()
+
+                        callInstanceMethod(listOf())
+                        writeLn()
+                    }
+
+                    val instanceFieldInitializerMethod = packageManager.getInstanceFieldInitializerLabel(currentClassDeclaration)
                     val stackOffsetOfThis = 8 + formalParameterEnvironment.size * 4
 
+                    writeComment("Retrieve `this` from method call arguments")
                     writeLn("mov eax, ebp")
                     writeLn("add eax, $stackOffsetOfThis")
+                    writeLn("mov eax, [eax]")
+                    writeLn()
 
-                    callInstanceMethod(parentZeroArgumentConstructorLabel, listOf())
-                }
+                    writeComment("Move instance field initializer method address into ebx")
+                    writeLn("mov ebx, $instanceFieldInitializerMethod")
+                    writeLn()
 
-                val instanceFieldInitializerMethod = packageManager.getInstanceFieldInitializerLabel(currentClassDeclaration)
-                val stackOffsetOfThis = 8 + formalParameterEnvironment.size * 4
+                    callInstanceMethod(listOf())
+                    writeLn()
 
-                writeLn("mov eax, ebp")
-                writeLn("add eax, $stackOffsetOfThis")
+                    super.visit(node.getChild("ConstructorBody"))
 
-                callInstanceMethod(instanceFieldInitializerMethod, listOf())
+                    val numVariables = localVariableDeclarationEnvironment.size
 
-                super.visit(node.getChild("ConstructorBody"))
+                    check(numVariables >= originalNumVariables) {
+                        "Can't pop off local variables from ConstructorDeclaration children"
+                    }
+
+                    writeComment("Pop off local variables defined in constructor body")
+                    writeLn("add esp, ${(numVariables - originalNumVariables) * 4}")
+                })
+
+                writeLn()
             })
         })
     }
@@ -322,29 +405,32 @@ class CodeGenerationVisitor(
         return currentClassDeclaration!!
     }
 
-    override fun visitAssignmentExpression(node: CSTNode) {
-        when (node.children[0].name) {
-            "Assignment" -> {
-                val assignmentExpression = node.getChild("AssignmentExpression")
-                writeComment("Evaluate Assignment Expression")
-                visit(assignmentExpression)
-                writeLn("push eax")
+    fun getCurrentMethodDeclaration(): CSTNode {
+        return currentMethodDeclaration!!
+    }
 
-                val leftHandSide = node.getChild("LeftHandSide")
-                writeComment("Get Assignment LHS")
-                visit(leftHandSide)
+    override fun visitAssignment(node: CSTNode) {
+        val assignmentExpression = node.getChild("AssignmentExpression")
+        writeComment("Evaluate AssignmentExpression (RHS)")
+        visit(assignmentExpression)
+        writeLn()
 
-                writeComment("Write assignment RHS to LHS")
-                writeLn("pop ebx")
-                writeLn("mov [eax], ebx")
+        writeComment("Save AssignmentExpression (RHS) result")
+        writeLn("push eax")
+        writeLn()
 
-                writeComment("Return value written into assignment")
-                writeLn("mov eax, [eax]")
-            }
-            "ConditionalOrExpression" -> {
-                visit(node.getChild("ConditionalOrExpression"))
-            }
-        }
+        val leftHandSide = node.getChild("LeftHandSide")
+        writeComment("Get Assignment LHS")
+        visit(leftHandSide)
+        writeLn()
+
+        writeComment("Write assignment RHS to LHS")
+        writeLn("pop ebx")
+        writeLn("mov [eax], ebx")
+        writeLn()
+
+        writeComment("Return value written into assignment")
+        writeLn("mov eax, [eax]")
     }
 
     override fun visitConditionalOrExpression(node: CSTNode) {
@@ -438,18 +524,30 @@ class CodeGenerationVisitor(
 
     override fun visitEqualityExpression(node: CSTNode) {
         if (node.children[0].name == "RelationalExpression") {
-            visit(node.getChild("EqualityExpression"))
+            visit(node.getChild("RelationalExpression"))
         } else {
             val equalityExpression = node.getChild("EqualityExpression")
             val relationalExpression = node.getChild("RelationalExpression")
 
+            writeComment("Compute EqualityExpression")
             visit(equalityExpression)
+            writeLn()
+
+            writeComment("Save result from EqualityExpression onto stack")
             writeLn("push eax")
+            writeLn()
+
+            writeComment("Compute RelationalExpression")
             visit(relationalExpression)
+            writeLn()
+
+            writeComment("Restore result of EqualityExpression from stack")
             writeLn("pop ebx")
+            writeLn()
 
             val operator = node.children[1].name
 
+            writeComment("Check if EqualityExpression == RelationalExpression")
             writeLn("cmp eax, ebx")
             writeLn("${setCCInstructionMap[operator]} al")
             writeLn("movzx eax, al")
@@ -463,15 +561,26 @@ class CodeGenerationVisitor(
         }
 
         val relationalExpression = node.getChild("RelationalExpression")
+        writeComment("Compute RelationalExpression in RelationalExpression")
         visit(relationalExpression)
+        writeLn()
 
         val operator = node.children[1].name
         if (operator in setCCInstructionMap.keys) {
             val additiveExpression = node.getChild("AdditiveExpression")
+            writeComment("Save result from RelationalExpression")
             writeLn("push eax")
-            visit(additiveExpression)
-            writeLn("pop ebx")
+            writeLn()
 
+            writeComment("Compute AdditiveExpression in RelationalExpression")
+            visit(additiveExpression)
+            writeLn()
+
+            writeComment("Restore RelationalExpression from stack")
+            writeLn("pop ebx")
+            writeLn()
+
+            writeComment("eax = AdditiveExpression $operator RelationalExpression")
             writeLn("cmp ebx, eax")
             writeLn("${setCCInstructionMap[operator]} al")
             writeLn("movzx eax, al")
@@ -481,6 +590,7 @@ class CodeGenerationVisitor(
         writeComment("Move to object's SuperType table")
         writeLn("add eax, $OBJECT_SUPER_TYPE_TABLE_OFFSET")
         writeLn("mov eax, [eax]")
+        writeLn()
 
         val referenceType = node.getChild("ReferenceType")
         val typeOfReferenceType = referenceType.getType()
@@ -499,7 +609,7 @@ class CodeGenerationVisitor(
             return
         }
 
-        val operator = node.children[1].lexeme
+        val operator = node.children[1].name
         val additiveExpression = node.getChild("AdditiveExpression")
         val multiplicativeExpression = node.getChild("MultiplicativeExpression")
 
@@ -522,7 +632,6 @@ class CodeGenerationVisitor(
                 writeLn("pop ebx")
                 writeLn("sub ebx, eax")
                 writeLn("mov eax, ebx")
-                writeLn()
             }
 
             "+" -> {
@@ -545,7 +654,6 @@ class CodeGenerationVisitor(
                     writeComment("eax = eax + ebx = MultiplicativeExpression + AdditiveExpression")
                     writeLn("pop ebx")
                     writeLn("add eax, ebx")
-                    writeLn()
                     return
                 }
 
@@ -578,22 +686,47 @@ class CodeGenerationVisitor(
                     }
 
                 if (expressionToConvertToString != null) {
-                    val stringValueOfMethod = stringClass.getDescendant({ descendant ->
+                    val stringValueOfMethod = stringClass.getDescendant(fun(descendant: CSTNode): Boolean {
                         if (descendant.name != "MethodDeclaration") {
-                            false
-                        } else {
-                            val methodHeader = descendant.getChild("MethodHeader")
-                            val methodDeclarator = methodHeader.getChild("MethodDeclarator")
-                            val formalParameterListOpt = methodDeclarator.getChild("FormalParameterListOpt")
-                            val formalParameterTypes = getFormalParameterTypes(formalParameterListOpt)
-                            formalParameterTypes.size == 1 &&
-                                packageManager.colonEquals(formalParameterTypes[0], expressionToConvertToString.getType()) &&
-                                getDeclarationName(descendant) == "valueOf"
+                            return false
                         }
+
+                        val methodHeader = descendant.getChild("MethodHeader")
+                        val methodDeclarator = methodHeader.getChild("MethodDeclarator")
+                        val formalParameterListOpt = methodDeclarator.getChild("FormalParameterListOpt")
+                        val formalParameterTypes = getFormalParameterTypes(formalParameterListOpt)
+
+                        if (formalParameterTypes.size != 1 || getDeclarationName(descendant) != "valueOf") {
+                            return false
+                        }
+
+                        val expressionToConvertToStringType = expressionToConvertToString.getType()
+
+                        if (expressionToConvertToStringType.isNull()) {
+                            val baseClass = packageManager.getJavaLangType("Object")
+                            check(baseClass != null) {
+                                "Base class not found."
+                            }
+
+                            val baseClassType = Type(baseClass!!, false)
+
+                            return baseClassType == formalParameterTypes[0]
+                        }
+
+                        if (packageManager.colonEquals(stringType, expressionToConvertToStringType)) {
+                            return stringType == formalParameterTypes[0]
+                        }
+
+                        if (expressionToConvertToStringType.isPrimitive()) {
+                            return expressionToConvertToStringType == formalParameterTypes[0]
+                        }
+
+                        return packageManager.colonEquals(formalParameterTypes[0], expressionToConvertToStringType)
                     })
 
 
                     if (expressionToConvertToString == additiveExpression) {
+                        writeComment("Converting AdditiveExpression to string")
                         writeComment("Save MultiplicativeExpression")
                         writeLn("push eax")
                         writeLn()
@@ -602,6 +735,7 @@ class CodeGenerationVisitor(
                         writeLn("push ebx")
                         writeLn()
                     } else {
+                        writeComment("Converting MultiplicativeExpression to string")
                         writeComment("Save AdditiveExpression")
                         writeLn("push ebx")
                         writeLn()
@@ -611,9 +745,13 @@ class CodeGenerationVisitor(
                         writeLn()
                     }
 
-                    val stringValueOfMethodLabel = packageManager.getClassMemberLabel(stringValueOfMethod)
+                    val stringValueOfMethodLabel = packageManager.getClassMemberLabel(stringValueOfMethod!!)
                     writeLn("call $stringValueOfMethodLabel")
+                    writeLn()
+
+                    writeComment("Pop formal parameter for method call")
                     writeLn("add esp, 4")
+                    writeLn()
 
                     if (expressionToConvertToString == additiveExpression) {
                         writeComment("Just converted AdditiveExpression, move it to ebx")
@@ -625,8 +763,6 @@ class CodeGenerationVisitor(
                         writeLn()
                     } else {
                         writeComment("Just converted MultiplicativeExpression, it's already in eax")
-                        writeLn()
-
                         writeComment("AdditiveExpression was saved on stack, moving to ebx")
                         writeLn("pop ebx")
                         writeLn()
@@ -634,8 +770,6 @@ class CodeGenerationVisitor(
                 }
 
                 writeComment("State: ebx = AdditiveExpression and eax = MultiplicativeExpression")
-                writeLn()
-
                 writeComment("Push arguments for String.concat")
                 writeLn("push ebx")
                 writeLn("push eax")
@@ -665,12 +799,15 @@ class CodeGenerationVisitor(
 
                 writeComment("Put String.concat into ebx")
                 writeLn("add ebx, ${stringConcatMethodIndex * 4}")
+                writeLn("mov ebx, [ebx]")
                 writeLn()
 
                 writeComment("Call String.concat")
                 writeLn("call ebx")
-                writeLn("add esp, 8")
                 writeLn()
+
+                writeComment("Pop formal parameters for String.concat method")
+                writeLn("add esp, 8")
             }
         }
     }
@@ -685,10 +822,33 @@ class CodeGenerationVisitor(
         val multiplicativeExpression = node.getChild("MultiplicativeExpression")
         val unaryExpression = node.getChild("UnaryExpression")
 
+        writeComment("Evaluate MultiplicativeExpression")
         visit(multiplicativeExpression)
+        writeLn()
+
+        writeComment("Save result from MultiplicativeExpression in MultiplicativeExpression")
         writeLn("push eax")
+        writeLn()
+
+        writeComment("Evaluate UnaryExpression in MultiplicativeExpression")
         visit(unaryExpression)
+        writeLn()
+
+        writeComment("Restore MultiplicativeExpression from stack")
         writeLn("pop ebx")
+        writeLn()
+
+        if (operator == "/" || operator == "%") {
+            writeComment("Ensure UnaryExpression (divisor) is non-zero")
+            val divisorNonZero = genLabel("divisorNonZero")
+            writeLn("cmp eax, 0")
+            writeLn("jne $divisorNonZero")
+            writeLn("call __exception")
+            writeLn("$divisorNonZero:")
+            writeLn()
+        }
+
+        writeComment("Perform $operator computation")
 
         when (operator) {
             "*" -> {
@@ -743,6 +903,9 @@ class CodeGenerationVisitor(
             )
         }
 
+        writeNullPointerException()
+        writeLn()
+
         if (!type.isArray && methodDeclaration.name == "AbstractMethodDeclaration") {
             val allInterfaceMethodsInProgram = packageManager.getAllInterfaceMethodsInProgram()
             val selectorIndexedTableIndex = allInterfaceMethodsInProgram.indexOfFirst({ canMethodsReplaceOneAnother(it, methodDeclaration) })
@@ -752,10 +915,22 @@ class CodeGenerationVisitor(
                 throw CodeGenerationError("Instance method $methodDeclarationName not found in selector indexed table")
             }
 
+            val qualifiedMethodName = run {
+                val qualifiedTypeName = packageManager.getQualifiedDeclarationName(type.type)
+                val methodName = getDeclarationName(methodDeclaration)
+                "$qualifiedTypeName.$methodName"
+            }
+
+            val formalParameterListOpt = methodDeclaration.getDescendant("FormalParameterListOpt")
+            val serializedArguments = getFormalParameterTypes(formalParameterListOpt).joinToString(",")
+
+            writeComment("Retrieving address of interface method \"$qualifiedMethodName($serializedArguments)\"")
             writeLn("mov ebx, eax")
             writeLn("add ebx, $OBJECT_SELECTOR_INDEXED_TABLE_POINTER_OFFSET")
             writeLn("mov ebx, [ebx]")
             writeLn("add ebx, ${4 * selectorIndexedTableIndex}")
+            writeLn("mov ebx, [ebx]")
+
         } else {
             val classDeclaration = if (type.isArray) packageManager.getJavaLangType("Object")!! else type.type
             val instanceMethods = packageManager.getClassOverriddenInstanceMethods(classDeclaration)
@@ -768,11 +943,31 @@ class CodeGenerationVisitor(
                 throw CodeGenerationError("Instance method $methodDeclarationName not found in instance methods of class $className")
             }
 
+            val qualifiedMethodName = run {
+                val qualifiedTypeName = packageManager.getQualifiedDeclarationName(classDeclaration)
+                val methodName = getDeclarationName(methodDeclaration)
+                "$qualifiedTypeName.$methodName"
+            }
+
+            val formalParameterListOpt = methodDeclaration.getDescendant("FormalParameterListOpt")
+            val serializedArguments = getFormalParameterTypes(formalParameterListOpt).joinToString(",")
+
+            writeComment("Retrieving address of class instance method \"$qualifiedMethodName($serializedArguments)\"")
             writeLn("mov ebx, eax")
             writeLn("add ebx, $OBJECT_V_TABLE_POINTER_OFFSET")
             writeLn("mov ebx, [ebx]")
             writeLn("add ebx, ${4 * methodVTableIndex}")
+            writeLn("mov ebx, [ebx]")
         }
+    }
+
+    fun writeNullPointerException() {
+        writeComment("NullPointerException: assert(eax != null)")
+        val pointerNotNull = genLabel("pointerNotNull")
+        writeLn("cmp eax, 0")
+        writeLn("jne $pointerNotNull")
+        writeLn("call __exception")
+        writeLn("$pointerNotNull:")
     }
 
     override fun visitName(node: CSTNode) {
@@ -785,42 +980,57 @@ class CodeGenerationVisitor(
                         val qualifiedName = node.getChild("QualifiedName")
                         val prefixName = qualifiedName.getChild("Name")
 
+                        writeComment("Retrieve address of \"${serializeName(prefixName)}\"")
                         visit(prefixName)
+                        writeLn()
 
                         when (prefixName.getNameNodeClassification()!!) {
 
                             NameNodeClassification.Expression -> {
-                                val instanceFieldDeclaration = node.getDeclaration()
-
-                                if (instanceFieldDeclaration.name != "FieldDeclaration") {
-                                    throw CodeGenerationError(
-                                        "Expected name ${serializeName(node)} to resolve to FieldDeclaration, but it resolved to a \"${instanceFieldDeclaration.name}\""
-                                    )
-                                }
-
-
-                                writeLn("add eax, $OBJECT_FIELD_OFFSET")
+                                writeNullPointerException()
+                                writeLn()
 
                                 val typeOfPrefixName = prefixName.getType()
 
+                                val fieldName = serializeName(node)
+                                writeComment("Retrieve field \"$fieldName\"")
+
                                 if (typeOfPrefixName.isArray) {
-                                    throw UnimplementedFeature("We don't yet support Array.length access")
-                                }
+                                    check(!isLValue(node)) {
+                                        "array.length can't be on the LHS of an assignment."
+                                    }
 
-                                val instanceFields = packageManager.getClassOverriddenInstanceFields(typeOfPrefixName.type)
-                                val fieldIndex = instanceFields.indexOf(instanceFieldDeclaration)
-
-                                if (fieldIndex == -1) {
-                                    val fieldDeclarationName = getDeclarationName(instanceFieldDeclaration)
-                                    val className = getDeclarationName(typeOfPrefixName.type)
-
-                                    throw CodeGenerationError("Instance field $fieldDeclarationName not found in instance methods of class $className")
-                                }
-
-                                writeLn("add eax, ${fieldIndex * 4}")
-
-                                if (!isLValue(node)) {
+                                    writeLn("add eax, $ARRAY_FIELD_OFFSET")
                                     writeLn("mov eax, [eax]")
+                                } else {
+
+                                    val instanceFieldDeclaration = node.getDeclaration()
+
+                                    if (instanceFieldDeclaration.name != "FieldDeclaration") {
+                                        throw CodeGenerationError(
+                                            "Expected name ${serializeName(node)} to resolve to FieldDeclaration, but it resolved to a \"${instanceFieldDeclaration.name}\""
+                                        )
+                                    }
+
+                                    writeLn("add eax, $OBJECT_FIELD_OFFSET")
+
+                                    val instanceFields = packageManager.getClassOverriddenInstanceFields(typeOfPrefixName.type)
+                                    val fieldIndex = instanceFields.indexOf(instanceFieldDeclaration)
+
+                                    if (fieldIndex == -1) {
+                                        val fieldDeclarationName = getDeclarationName(instanceFieldDeclaration)
+                                        val className = getDeclarationName(typeOfPrefixName.type)
+
+                                        throw CodeGenerationError("Instance field $fieldDeclarationName not found in instance methods of class $className")
+                                    }
+
+                                    writeLn("add eax, ${fieldIndex * 4}")
+
+                                    if (!isLValue(node)) {
+                                        writeLn()
+                                        writeComment("Dereference field \"$fieldName\"")
+                                        writeLn("mov eax, [eax]")
+                                    }
                                 }
                             }
 
@@ -833,10 +1043,15 @@ class CodeGenerationVisitor(
                                     )
                                 }
 
+                                val fieldName = serializeName(node)
+                                writeComment("Retrieve static field \"$fieldName\"")
+
                                 val classMemberLabel = packageManager.getClassMemberLabel(staticFieldDeclaration)
                                 writeLn("mov eax, $classMemberLabel")
 
                                 if (!isLValue(node)) {
+                                    writeLn()
+                                    writeComment("Dereference static field \"$fieldName\"")
                                     writeLn("mov eax, [eax]")
                                 }
                             }
@@ -853,31 +1068,43 @@ class CodeGenerationVisitor(
                     "SimpleName" -> {
                         val nameNodeDeclaration = node.getDeclaration()
 
+                        val serializedName = serializeName(node)
+
                         if (nameNodeDeclaration.name == "FormalParameter") {
                             val formalParameterIndex = formalParameterEnvironment.findIndex(getDeclarationName(nameNodeDeclaration))
                             val formalParameterStackOffset = 8 + (formalParameterEnvironment.size - (formalParameterIndex + 1)) * 4
+                            writeComment("Retrieve FormalParameter \"$serializedName\" from stack")
                             writeLn("mov eax, $formalParameterStackOffset")
                             writeLn("add eax, ebp")
 
                             if (!isLValue(node)) {
+                                writeLn()
+                                writeComment("Dereference FormalParameter \"$serializedName\"")
                                 writeLn("mov eax, [eax]")
                             }
 
                         } else if (nameNodeDeclaration.name == "LocalVariableDeclaration") {
                             val localVariableIndex = localVariableDeclarationEnvironment.findIndex(getDeclarationName(nameNodeDeclaration))
                             val localVariableStackOffset = -(localVariableIndex + 1) * 4
+                            writeComment("Retrieve LocalVariableDeclaration \"$serializedName\" from stack")
                             writeLn("mov eax, $localVariableStackOffset")
                             writeLn("add eax, ebp")
 
                             if (!isLValue(node)) {
+                                writeLn()
+                                writeComment("Dereference LocalVariableDeclaration \"$serializedName\"")
                                 writeLn("mov eax, [eax]")
                             }
 
                         } else if (nameNodeDeclaration.name == "FieldDeclaration") {
                             val stackOffsetOfThis = 8 + formalParameterEnvironment.size * 4
+                            writeComment("Retrieve `this` from method call arguments")
                             writeLn("mov eax, $stackOffsetOfThis")
                             writeLn("add eax, ebp")
                             writeLn("mov eax, [eax]")
+                            writeLn()
+
+                            writeComment("Retrieve field \"$serializedName\" from this")
                             writeLn("add eax, $OBJECT_FIELD_OFFSET")
 
                             val instanceFields = packageManager.getClassOverriddenInstanceFields(getCurrentClassDeclaration())
@@ -886,12 +1113,14 @@ class CodeGenerationVisitor(
                             if (fieldIndex == -1) {
                                 val fieldDeclarationName = getDeclarationName(nameNodeDeclaration)
                                 val className = getDeclarationName(getCurrentClassDeclaration())
-                                throw CodeGenerationError("Instance method $fieldDeclarationName not found in instance methods of class $className")
+                                throw CodeGenerationError("Instance field $fieldDeclarationName not found in instance methods of class $className")
                             }
 
                             writeLn("add eax, ${fieldIndex * 4}")
 
                             if (!isLValue(node)) {
+                                writeLn()
+                                writeComment("Dereference field \"$serializedName\"")
                                 writeLn("mov eax, [eax]")
                             }
                         }
@@ -910,6 +1139,7 @@ class CodeGenerationVisitor(
                         val prefixName = qualifiedName.getChild("Name")
 
                         visit(prefixName)
+                        writeLn()
 
                         val identifier = qualifiedName.getChild("IDENTIFIER").lexeme
 
@@ -926,6 +1156,7 @@ class CodeGenerationVisitor(
                                     )
                                 }
 
+                                writeComment("Retrieve address of static method")
                                 val classMemberLabel = packageManager.getClassMemberLabel(staticMethodDeclaration)
                                 writeLn("mov ebx, $classMemberLabel")
                             }
@@ -957,13 +1188,23 @@ class CodeGenerationVisitor(
                         }
 
                         val stackOffsetOfThis = 8 + formalParameterEnvironment.size * 4
+                        writeComment("Retrieve `this` from method call arguments")
                         writeLn("mov eax, $stackOffsetOfThis")
                         writeLn("add eax, ebp")
+                        writeLn("mov eax, [eax]")
+                        writeLn()
 
-                        writeLn("mov ebx, [eax]")
+                        val formalParameterListOpt = instanceMethodDeclaration.getDescendant("FormalParameterListOpt")
+                        val serializedArguments = getFormalParameterTypes(formalParameterListOpt).joinToString(",")
+                        val qualifiedClassName = packageManager.getQualifiedDeclarationName(currentClassDeclaration)
+                        val qualifiedMethodName = "$qualifiedClassName.${getDeclarationName(instanceMethodDeclaration)}"
+
+                        writeComment("Retrieve address of instance method \"$qualifiedMethodName($serializedArguments)\"")
+                        writeLn("mov ebx, eax")
                         writeLn("add ebx, $OBJECT_V_TABLE_POINTER_OFFSET")
                         writeLn("mov ebx, [ebx]")
                         writeLn("add ebx, ${4 * methodVTableIndex}")
+                        writeLn("mov ebx, [ebx]")
                     }
                 }
             }
@@ -976,14 +1217,16 @@ class CodeGenerationVisitor(
 
     override fun visitCastExpression(node: CSTNode) {
         val expression = node.children.last()
+        writeComment("Evaluate Expression inside CastExpression")
         visit(expression)
+        writeLn()
 
         val typeOfCast = node.getType()
         val originalType = expression.getType()
 
         if (node.isDowncast()) {
             writeComment("Check if downcast from \"$originalType\" to \"$typeOfCast\" is valid")
-            writeComment("Move to object's SuperType table")
+            writeComment("Move into object's SuperType table")
             writeLn("mov ebx, eax")
             writeLn("add ebx, $OBJECT_SUPER_TYPE_TABLE_OFFSET")
             writeLn("mov ebx, [ebx]")
@@ -992,7 +1235,7 @@ class CodeGenerationVisitor(
             val indexOfTypeOfCast = packageManager.getSuperTypeTable(originalType).keys.indexOf(typeOfCast)
             check(indexOfTypeOfCast != -1) { "Type of \"ReferenceType\" node not found in SuperType table" }
 
-            writeComment("Access SuperType table of object")
+            writeComment("Access SuperType table entry")
             writeLn("add ebx, ${indexOfTypeOfCast * 4}")
             writeLn("mov ebx, [ebx]")
             writeLn()
@@ -1008,19 +1251,22 @@ class CodeGenerationVisitor(
     }
 
     override fun visitPrimaryNoNewArray(node: CSTNode) {
-        when (node.name) {
+        when (node.children[0].name) {
             "this" -> {
                 val stackOffsetOfThis = 8 + formalParameterEnvironment.size * 4
+                writeComment("PrimaryNoNewArray: Evaluate `this`")
                 writeLn("mov eax, ebp")
                 writeLn("add eax, $stackOffsetOfThis")
                 writeLn("mov eax, [eax]")
             }
 
             "(" -> {
+                writeComment("PrimaryNoNewArray: Evaluate ( Expression )")
                 visit(node.getChild("Expression"))
             }
 
             else -> {
+                writeComment("Evaluating PrimaryNoNewArray")
                 super.visitPrimaryNoNewArray(node)
             }
         }
@@ -1036,42 +1282,84 @@ class CodeGenerationVisitor(
         writeComment("Create \"${getDeclarationName(classDeclaration)}\" instance")
         writeLn("mov eax, $numBytes")
         writeLn("call __malloc")
+        writeLn()
 
         val vTableLabel = packageManager.getVTableLabel(classDeclaration)
         writeComment("Setup VTable pointer")
         writeLn("mov ebx, eax")
         writeLn("add ebx, $OBJECT_V_TABLE_POINTER_OFFSET")
-        writeLn("mov [ebx], $vTableLabel")
+        writeLn("mov ecx, $vTableLabel")
+        writeLn("mov [ebx], ecx")
+        writeLn()
 
         val selectorIndexedTableLabel = packageManager.getSelectorIndexedTableLabel(classDeclaration)
         writeComment("Setup Selector Indexed Table pointer")
         writeLn("mov ebx, eax")
         writeLn("add ebx, $OBJECT_SELECTOR_INDEXED_TABLE_POINTER_OFFSET")
-        writeLn("mov [ebx], $selectorIndexedTableLabel")
+        writeLn("mov ecx, $selectorIndexedTableLabel")
+        writeLn("mov [ebx], ecx")
+        writeLn()
 
         val superTypeTableLabel = packageManager.getSuperTypeTableLabel(Type(classDeclaration, false))
         writeComment("Setup SuperType Table pointer")
         writeLn("mov ebx, eax")
         writeLn("add ebx, $OBJECT_SUPER_TYPE_TABLE_OFFSET")
-        writeLn("mov [ebx], $superTypeTableLabel")
+        writeLn("mov ecx, $superTypeTableLabel")
+        writeLn("mov [ebx], ecx")
     }
 
     /**
      * Assume `eax` is set to `this`.
+     * Assume `ebx` is set to the method address.
      */
-    fun callInstanceMethod(methodLabel: String, arguments: List<CSTNode>) {
+    fun callInstanceMethod(arguments: List<CSTNode>) {
+        writeComment("Instance method call: Push `this` onto the stack")
         writeLn("push eax")
-        callStaticMethod(methodLabel, arguments)
+        writeLn()
+
+        callMethod(arguments)
+
+        writeComment("Instance method call: Pop `this` off the stack")
         writeLn("add esp, 4")
     }
 
-    fun callStaticMethod(methodLabel: String, arguments: List<CSTNode>) {
-        arguments.forEach({ argument ->
-            visit(argument)
-            writeLn("push eax")
-        })
+    /**
+     * Assume `ebx` is set to the method address.
+     */
+    fun callMethod(arguments: List<CSTNode>) {
+        if (arguments.isNotEmpty()) {
+            writeComment("Pushing ${arguments.size} arguments onto the stack")
 
-        writeLn("call $methodLabel")
+            IntRange(0, arguments.size - 1).forEach({i ->
+                val argument = arguments[i]
+
+                writeComment("Method call: Save method address (i.e: ebx) before evaluating argument $i")
+                writeLn("push ebx")
+                writeLn()
+
+                writeComment("Method Call: Evaluate argument $i")
+                visit(argument)
+                writeLn()
+
+                writeComment("Method call: Restore method address (i.e: ebx) after evaluating argument $i")
+                writeLn("pop ebx")
+                writeLn()
+
+                writeComment("Method call: Push argument $i")
+                writeLn("push eax")
+
+                if (arguments.size - 1 != i) {
+                    writeLn()
+                }
+            })
+            writeLn()
+        }
+
+        writeComment("Call Method")
+        writeLn("call ebx")
+        writeLn()
+
+        writeComment("Pop off ${arguments.size} formal parameters from stack")
         writeLn("add esp, ${arguments.size * 4}")
     }
 
@@ -1082,7 +1370,22 @@ class CodeGenerationVisitor(
         val constructorDeclarationLabel = packageManager.getClassMemberLabel(constructorDeclaration)
 
         createClassInstance(classDeclaration)
-        callInstanceMethod(constructorDeclarationLabel, arguments)
+        writeLn()
+
+        val qualifiedClassName = packageManager.getQualifiedDeclarationName(classDeclaration)
+        writeComment("Save \"$qualifiedClassName\" instance")
+        writeLn("push eax")
+        writeLn()
+
+        writeComment("Move constructor method into ebx")
+        writeLn("mov ebx, $constructorDeclarationLabel")
+        writeLn()
+
+        callInstanceMethod(arguments)
+        writeLn()
+
+        writeComment("Restore \"$qualifiedClassName\" instance from stack")
+        writeLn("pop eax")
     }
 
     override fun visitMethodInvocation(node: CSTNode) {
@@ -1090,42 +1393,72 @@ class CodeGenerationVisitor(
             "Name" -> {
                 val nameNode = node.getChild("Name")
                 visit(nameNode)
+                writeLn()
 
-                val arguments = node.getChild("ArgumentsListOpt").getDescendants("Expression")
+                val arguments = node.getChild("ArgumentListOpt").getDescendants("Expression")
                 val methodDeclaration = nameNode.getDeclaration()
+                val methodName = serializeName(nameNode)
 
                 if ("static" in getModifiers(methodDeclaration)) {
-                    callStaticMethod("ebx", arguments)
+                    writeComment("Calling static method \"$methodName\"")
+                    callMethod(arguments)
                 } else {
-                    callInstanceMethod("ebx", arguments)
+                    writeComment("Calling instance method \"$methodName\"")
+                    callInstanceMethod(arguments)
                 }
             }
 
             "Primary" -> {
                 val primary = node.getChild("Primary")
                 visit(primary)
+                writeLn()
 
+                val primaryType = primary.getType()
                 val identifier = node.getChild("IDENTIFIER")
                 val methodDeclaration = identifier.getDeclaration()
-                getMethodAddress(primary.getType(), methodDeclaration)
 
-                val arguments = node.getChild("ArgumentsListOpt").getDescendants("Expression")
-                if ("static" in getModifiers(methodDeclaration)) {
-                    callStaticMethod("ebx", arguments)
-                } else {
-                    callInstanceMethod("ebx", arguments)
+                getMethodAddress(primaryType, methodDeclaration)
+                writeLn()
+
+                val arguments = node.getChild("ArgumentListOpt").getDescendants("Expression")
+
+                check("static" !in getModifiers(methodDeclaration)) {
+                    "Can't have static method calls of Primary"
                 }
+
+                writeComment("Calling instance method \"$primaryType.${identifier.lexeme}\"")
+                callInstanceMethod(arguments)
+            }
+        }
+    }
+
+    override fun visitBlockStatements(node: CSTNode) {
+        when (node.children[0].name) {
+            "BlockStatements" -> {
+                visit(node.getChild("BlockStatements"))
+                writeLn()
+                visit(node.getChild("BlockStatement"))
+            }
+
+            else -> {
+                super.visitBlockStatements(node)
             }
         }
     }
 
     override fun visitFieldAccess(node: CSTNode) {
         val primary = node.getChild("Primary")
+        writeComment("Resolve Field")
         visit(primary)
+        writeLn()
 
-        val instanceField = node.getDeclaration()
+        writeNullPointerException()
+        writeLn()
+
         val typeOfPrimary = primary.getType()
         val instanceFieldName = node.getChild("IDENTIFIER").lexeme
+
+        writeComment("Access field \"$instanceFieldName\" of Primary = eax")
 
         if (typeOfPrimary.isArray) {
             check(instanceFieldName == "length") { "Tried to access non-length field of an array." }
@@ -1133,6 +1466,7 @@ class CodeGenerationVisitor(
             writeLn("add eax, $ARRAY_FIELD_OFFSET")
             writeLn("mov eax, [eax]")
         } else {
+            val instanceField = node.getChild("IDENTIFIER").getDeclaration()
             val instanceFields = packageManager.getClassOverriddenInstanceFields(typeOfPrimary.type)
             val indexOfField = instanceFields.indexOf(instanceField)
 
@@ -1149,7 +1483,9 @@ class CodeGenerationVisitor(
 
     override fun visitArrayAccess(node: CSTNode) {
         val expression = node.getChild("Expression")
+        writeComment("Evaluate Expression inside ArrayAccess")
         visit(expression)
+        writeLn()
 
         val arrayIndexPositive = genLabel("arrayIndexPositive")
 
@@ -1158,19 +1494,28 @@ class CodeGenerationVisitor(
         writeLn("jge $arrayIndexPositive")
         writeLn("call __exception")
         writeLn("$arrayIndexPositive:")
+        writeLn()
 
         writeComment("Save array index")
         writeLn("push eax")
+        writeLn()
 
+        writeComment("Evaluate ${node.children[0].name}")
         visit(node.children[0])
+        writeLn()
 
-        writeComment("Retrieve array index")
+        writeNullPointerException()
+        writeLn()
+
+        writeComment("Restore array index")
         writeLn("pop ebx")
+        writeLn()
 
         writeComment("Get array length")
         writeLn("mov edx, eax")
         writeLn("add edx, $ARRAY_FIELD_OFFSET")
         writeLn("mov edx, [edx]")
+        writeLn()
 
         val arrayIndexInBounds = genLabel("arrayIndexInBounds")
         writeComment("Ensure array index is less than length")
@@ -1178,6 +1523,7 @@ class CodeGenerationVisitor(
         writeLn("jl $arrayIndexInBounds")
         writeLn("call __exception")
         writeLn("$arrayIndexInBounds:")
+        writeLn()
 
         writeComment("Get address of array element offset")
         writeLn("imul ebx, 4")
@@ -1185,6 +1531,8 @@ class CodeGenerationVisitor(
         writeLn("add eax, ebx")
 
         if (!isLValue(node)) {
+            writeLn()
+
             writeComment("In RValue, so get value")
             writeLn("mov eax, [eax]")
         }
@@ -1283,77 +1631,116 @@ class CodeGenerationVisitor(
                     i += 1
                 }
 
-                val stringLiteralLabel = genLabel("stringLiteral")
-                stringLiteralDeclarations.add("$stringLiteralLabel: dw ${stringChars.joinToString(",")}")
+                if (stringChars.isNotEmpty()) {
+                    val stringLiteralLabel = genLabel("stringLiteral")
+                    stringLiteralDeclarations.add("$stringLiteralLabel: dd ${stringChars.joinToString(",")}")
 
-                val numBytes = stringChars.size * 4 + ARRAY_ELEMENT_OFFSET
-                writeLn("mov eax, $numBytes")
-                writeLn("call __malloc")
+                    val numBytes = stringChars.size * 4 + ARRAY_ELEMENT_OFFSET
+                    writeComment("Create char[] array of size ${stringChars.size}")
+                    writeLn("mov eax, $numBytes")
+                    writeLn("call __malloc")
+                    writeLn()
 
-                val baseClass = packageManager.getJavaLangType("Object")
-                if (baseClass == null) {
-                    throw CodeGenerationError("Couldn't find class java.lang.Object in program")
+                    val baseClass = packageManager.getJavaLangType("Object")
+                    if (baseClass == null) {
+                        throw CodeGenerationError("Couldn't find class java.lang.Object in program")
+                    }
+
+                    val vTableLabel = packageManager.getVTableLabel(baseClass)
+                    writeComment("Initialize VTable pointer of char[]")
+                    writeLn("mov ebx, eax")
+                    writeLn("add ebx, $ARRAY_V_TABLE_POINTER_OFFSET")
+                    writeLn("mov ecx, $vTableLabel")
+                    writeLn("mov [ebx], ecx")
+                    writeLn()
+
+                    val superTypeTableLabel = packageManager.getSuperTypeTableLabel(Type(CSTNode("char"), true))
+                    writeComment("Initialize SuperType table pointer of char[]")
+                    writeLn("mov ebx, eax")
+                    writeLn("add ebx, $ARRAY_SUPER_TYPE_TABLE_OFFSET")
+                    writeLn("mov ecx, $superTypeTableLabel")
+                    writeLn("mov [ebx], ecx")
+                    writeLn()
+
+                    // Skip Sector Indexed table
+
+                    writeComment("Write char[] length")
+                    writeLn("mov ebx, eax")
+                    writeLn("add ebx, $ARRAY_FIELD_OFFSET")
+
+                    writeLn("mov word [ebx], ${stringChars.size}")
+                    writeLn()
+
+                    writeComment("Copy string literal \"$stringLiteral\" into char[]")
+                    writeLn("mov esi, $stringLiteralLabel")
+                    writeLn("mov edi, eax")
+                    writeLn("add edi, $ARRAY_ELEMENT_OFFSET")
+                    writeLn("cld")
+                    writeLn("mov ecx, ${stringChars.size * 4}")
+                    writeLn("rep movsb")
+                    writeLn()
                 }
-
-                val vTableLabel = packageManager.getVTableLabel(baseClass)
-                writeComment("Initialize VTable pointer")
-                writeLn("mov ebx, eax")
-                writeLn("add ebx, $ARRAY_V_TABLE_POINTER_OFFSET")
-                writeLn("mov [ebx], $vTableLabel")
-
-                val superTypeTableLabel = packageManager.getSuperTypeTableLabel(Type(CSTNode("char"), true))
-                writeComment("Initialize SuperType table pointer")
-                writeLn("mov ebx, eax")
-                writeLn("add ebx, $ARRAY_SUPER_TYPE_TABLE_OFFSET")
-                writeLn("mov [ebx], $superTypeTableLabel")
-
-                // Skip Section Indexed table
-
-                writeComment("Write array length")
-                writeLn("mov ebx, eax")
-                writeLn("add ebx, $ARRAY_FIELD_OFFSET")
-                writeLn("mov [ebx], ${stringChars.size}")
-
-                writeComment("Copy string literal \"$stringLexeme\" into char array")
-                writeLn("mov esi, $stringLiteralLabel")
-                writeLn("mov edi, eax")
-                writeLn("add edi, $ARRAY_ELEMENT_OFFSET")
-                writeLn("cld")
-                writeLn("mov ecx, ${stringChars.size * 4}")
-                writeLn("rep movsb")
 
                 val stringClass = packageManager.getJavaLangType("String")
                 if (stringClass == null) {
                     throw CodeGenerationError("Couldn't find class java.lang.String in program")
                 }
 
-                writeComment("Save char array")
-                writeLn("push eax")
+                if (stringChars.isNotEmpty()) {
+                    writeComment("Save char[] to stack")
+                    writeLn("push eax")
+                    writeLn()
+                }
 
                 writeComment("Create String object")
                 createClassInstance(stringClass)
-
-                val charArrayConstructor = stringClass.getDescendant({ descendant ->
-                    if (descendant.name != "ConstructorDeclaration") {
-                        false
-                    } else {
-                        val constructorDeclarator = descendant.getChild("ConstructorDeclarator")
-                        val formalParameterListOpt = constructorDeclarator.getChild("FormalParameterListOpt")
-                        val formalParameterTypes = getFormalParameterTypes(formalParameterListOpt)
-                        formalParameterTypes.size == 1 && formalParameterTypes[0].isArray && formalParameterTypes[0].type.name == "char"
-                    }
-                })
-                val charArrayConstructorLabel = packageManager.getClassMemberLabel(charArrayConstructor)
-
-                writeComment("Restore char array pointer")
-                writeLn("pop ebx")
                 writeLn()
 
-                writeComment("Push arguments for char[] constructor call to String")
+                val stringConstructor = stringClass.getDescendant(fun (descendant: CSTNode): Boolean {
+                    if (descendant.name != "ConstructorDeclaration") {
+                        return false
+                    }
+
+                    val constructorDeclarator = descendant.getChild("ConstructorDeclarator")
+                    val formalParameterListOpt = constructorDeclarator.getChild("FormalParameterListOpt")
+                    val formalParameterTypes = getFormalParameterTypes(formalParameterListOpt)
+
+                    if (stringChars.isNotEmpty()) {
+                       return formalParameterTypes.size == 1 && formalParameterTypes[0].isArray && formalParameterTypes[0].type.name == "char"
+                    }
+
+                    return formalParameterTypes.isEmpty()
+                })
+                val stringConstructorLabel = packageManager.getClassMemberLabel(stringConstructor)
+
+                if (stringChars.isNotEmpty()) {
+                    writeComment("Restore char[] pointer")
+                    writeLn("pop ebx")
+                    writeLn()
+                }
+
+                writeComment("Push String object for string constructor call")
                 writeLn("push eax")
-                writeLn("push ebx")
-                writeLn("call $charArrayConstructorLabel")
-                writeLn("add esp, 8")
+                writeLn()
+
+                if (stringChars.isNotEmpty()) {
+                    writeComment("Push char[] as argument to string constructor call")
+                    writeLn("push ebx")
+                    writeLn()
+                }
+
+                writeComment("Call string constructor")
+                writeLn("call $stringConstructorLabel")
+                writeLn()
+
+                if (stringChars.isNotEmpty()) {
+                    writeComment("Remove String char[] formal argument from stack")
+                    writeLn("add esp, 4")
+                    writeLn()
+                }
+
+                writeComment("Remove String object from formal parameters and put it into eax")
+                writeLn("pop eax")
                 writeLn()
             }
         }
@@ -1362,20 +1749,24 @@ class CodeGenerationVisitor(
     override fun visitArrayCreationExpression(node: CSTNode) {
         visit(node.getChild("DimExpr"))
 
-        val createArray = genLabel("createArray")
+        writeLn()
+        val arraySizePositive = genLabel("arraySizePositive")
         writeComment("Ensure array size is positive")
         writeLn("cmp eax, 0")
-        writeLn("jge $createArray")
+        writeLn("jge $arraySizePositive")
         writeLn("call __exception")
-        writeLn("$createArray:")
+        writeLn("$arraySizePositive:")
+        writeLn()
 
         writeComment("Save array length")
         writeLn("push eax")
+        writeLn()
 
         writeComment("Create array")
         writeLn("imul eax, 4")
         writeLn("add eax, $ARRAY_ELEMENT_OFFSET")
         writeLn("call __malloc")
+        writeLn()
 
         val baseClass = packageManager.getJavaLangType("Object")
         if (baseClass == null) {
@@ -1386,47 +1777,59 @@ class CodeGenerationVisitor(
         writeComment("Initialize VTable pointer")
         writeLn("mov ebx, eax")
         writeLn("add ebx, $ARRAY_V_TABLE_POINTER_OFFSET")
-        writeLn("mov [ebx], $vTableLabel")
+        writeLn("mov ecx, $vTableLabel")
+        writeLn("mov [ebx], ecx")
+        writeLn()
 
         val superTypeTableLabel = packageManager.getSuperTypeTableLabel(node.getType())
         writeComment("Initialize SuperType table pointer")
         writeLn("mov ebx, eax")
         writeLn("add ebx, $ARRAY_SUPER_TYPE_TABLE_OFFSET")
-        writeLn("mov [ebx], $superTypeTableLabel")
+        writeLn("mov ecx, $superTypeTableLabel")
+        writeLn("mov [ebx], ecx")
+        writeLn()
 
         // Skip Section Indexed table
 
         writeComment("Retrieve array length")
-        writeComment("pop edx")
+        writeLn("pop edx")
+        writeLn()
 
         writeComment("Write array length")
         writeLn("mov ebx, eax")
         writeLn("add ebx, $ARRAY_FIELD_OFFSET")
         writeLn("mov [ebx], edx")
+        writeLn()
 
         // Initialize elements to 0
+        writeComment("Initialize array elements to 0")
         writeLn("mov ebx, 0")
-        val forLoop = genLabel("for")
-        val endForLoop = genLabel("endFor")
+        writeLn()
 
+        val forLoop = genLabel("beginFor")
+        val endForLoop = genLabel("endFor")
         writeLn("$forLoop:")
         withIndent({
             writeComment("If index (ebx) >= size (edx), exit for loop")
             writeLn("cmp ebx, edx")
             writeLn("jge $endForLoop")
+            writeLn()
 
             writeComment("Find array element offset in bytes")
             writeLn("mov ecx, ebx")
-            writeLn("imul ecx 4")
+            writeLn("imul ecx, 4")
             writeLn("add ecx, $ARRAY_ELEMENT_OFFSET")
+            writeLn()
 
             writeComment("Calculate array element address")
             writeLn("add ecx, eax")
+            writeLn()
 
             writeComment("Initialize array element to 0")
-            writeLn("mov [ecx], 0")
+            writeLn("mov word [ecx], 0")
 
             writeLn()
+            writeComment("Increment loop index and go back to the top of for")
             writeLn("add ebx, 1")
             writeLn("jmp $forLoop")
         })
@@ -1440,8 +1843,10 @@ class CodeGenerationVisitor(
         writeLn()
 
         val endIfLabel = genLabel("endif")
+        writeComment("If check fails, goto \"$endIfLabel\"")
         writeLn("cmp eax, 0")
         writeLn("je $endIfLabel")
+        writeLn()
 
         val statement = node.getChild("Statement")
         withIndent({
@@ -1460,8 +1865,10 @@ class CodeGenerationVisitor(
         writeLn()
 
         val elseLabel = genLabel("else")
+        writeComment("If check fails, goto \"$elseLabel\"")
         writeLn("cmp eax, 0")
         writeLn("je $elseLabel")
+        writeLn()
 
         val thenStatement = node.getChild("StatementNoShortIf")
         withIndent({
@@ -1493,6 +1900,7 @@ class CodeGenerationVisitor(
         val elseLabel = genLabel("else")
         writeLn("cmp eax, 0")
         writeLn("je $elseLabel")
+        writeLn()
 
         val thenStatement = node.children[4]
         withIndent({
@@ -1528,15 +1936,16 @@ class CodeGenerationVisitor(
         writeComment("Check termination condition")
         writeLn("cmp eax, 0")
         writeLn("je $endWhileLabel")
+        writeLn()
 
         val statement = node.getChild("Statement")
         withIndent({
             writeComment("Execute statements inside WhileStatement")
             visit(statement)
+            writeLn()
+            writeLn("jmp $beginWhileLabel")
         })
         writeLn()
-
-        writeLn("jmp $beginWhileLabel")
         writeLn("$endWhileLabel:")
     }
 
@@ -1553,15 +1962,17 @@ class CodeGenerationVisitor(
         writeComment("Check termination condition")
         writeLn("cmp eax, 0")
         writeLn("je $endWhileLabel")
+        writeLn()
 
         val statement = node.getChild("StatementNoShortIf")
         withIndent({
             writeComment("Execute statements inside WhileStatementNoShortIf")
             visit(statement)
+            writeLn()
+
+            writeLn("jmp $beginWhileLabel")
         })
         writeLn()
-
-        writeLn("jmp $beginWhileLabel")
         writeLn("$endWhileLabel:")
     }
 
@@ -1571,43 +1982,46 @@ class CodeGenerationVisitor(
 
         val numVariables = localVariableDeclarationEnvironment.size
 
-        writeComment("For loop initializer")
-        val forInitOpt = node.getChild("ForInitOpt")
-        visit(forInitOpt)
-        writeLn()
-
-        writeLn("$beginForLabel:")
-
-        val expressions = node.getChild("ExpressionOpt").getDescendants("Expression")
-        if (expressions.isNotEmpty()) {
-            writeComment("Compute Expression in ForStatement")
-            visit(expressions.first())
+        localVariableDeclarationEnvironment.withNewScope({
+            writeComment("For loop initializer")
+            val forInitOpt = node.getChild("ForInitOpt")
+            visit(forInitOpt)
             writeLn()
 
-            writeComment("Check termination condition")
-            writeLn("cmp eax, 0")
-            writeLn("je $endForLabel")
-        }
+            writeLn("$beginForLabel:")
+            withIndent({
+                val expressions = node.getChild("ExpressionOpt").getDescendants("Expression")
+                if (expressions.isNotEmpty()) {
+                    writeComment("Compute Expression in ForStatement")
+                    visit(expressions.first())
+                    writeLn()
 
-        writeComment("Visit Statement inside for loop")
-        val statement = node.getChild("Statement")
-        visit(statement)
-        writeLn()
+                    writeComment("Check termination condition")
+                    writeLn("cmp eax, 0")
+                    writeLn("je $endForLabel")
+                    writeLn()
+                }
 
-        writeComment("Update for loop variables")
-        val forUpdateOpt = node.getChild("ForUpdateOpt")
-        visit(forUpdateOpt)
-        writeLn()
+                writeComment("Visit Statement inside for loop")
+                val statement = node.getChild("Statement")
+                visit(statement)
+                writeLn()
 
-        writeLn("jmp $beginForLabel")
-        writeLn("$endForLabel:")
-        writeLn()
+                writeComment("Update for loop variables")
+                val forUpdateOpt = node.getChild("ForUpdateOpt")
+                visit(forUpdateOpt)
+                writeLn()
 
-        writeComment("Pop for loop variables from stack")
+                writeLn("jmp $beginForLabel")
+            })
 
-        check(localVariableDeclarationEnvironment.size - numVariables >= 0) { "It's not possible to remove variables from the stack inside ForStatement" }
+            writeLn("$endForLabel:")
+            writeLn()
 
-        writeLn("add esp, ${(localVariableDeclarationEnvironment.size - numVariables) * 4}")
+            writeComment("Pop for loop variables from stack")
+            check(localVariableDeclarationEnvironment.size - numVariables >= 0) { "It's not possible to remove variables from the stack inside ForStatement" }
+            writeLn("add esp, ${(localVariableDeclarationEnvironment.size - numVariables) * 4}")
+        })
     }
 
     override fun visitForStatementNoShortIf(node: CSTNode) {
@@ -1616,64 +2030,84 @@ class CodeGenerationVisitor(
 
         val numVariables = localVariableDeclarationEnvironment.size
 
-        writeComment("For loop initializer")
-        val forInitOpt = node.getChild("ForInitOpt")
-        visit(forInitOpt)
-        writeLn()
-
-        writeLn("$beginForLabel:")
-
-        val expressions = node.getChild("ExpressionOpt").getDescendants("Expression")
-        if (expressions.isNotEmpty()) {
-            writeComment("Compute Expression in ForStatementNoShortIf")
-            visit(expressions.first())
+        localVariableDeclarationEnvironment.withNewScope({
+            writeComment("For loop initializer")
+            val forInitOpt = node.getChild("ForInitOpt")
+            visit(forInitOpt)
             writeLn()
 
-            writeComment("Check termination condition")
-            writeLn("cmp eax, 0")
-            writeLn("je $endForLabel")
-        }
+            writeLn("$beginForLabel:")
+            withIndent({
+                val expressions = node.getChild("ExpressionOpt").getDescendants("Expression")
+                if (expressions.isNotEmpty()) {
+                    writeComment("Compute Expression in ForStatement")
+                    visit(expressions.first())
+                    writeLn()
 
-        writeComment("Visit Statement inside for loop")
-        val statement = node.getChild("StatementNoShortIf")
-        visit(statement)
-        writeLn()
+                    writeComment("Check termination condition")
+                    writeLn("cmp eax, 0")
+                    writeLn("je $endForLabel")
+                    writeLn()
+                }
 
-        writeComment("Update for loop variables")
-        val forUpdateOpt = node.getChild("ForUpdateOpt")
-        visit(forUpdateOpt)
-        writeLn()
+                writeComment("Visit Statement inside for loop")
+                val statementNoShortIf = node.getChild("StatementNoShortIf")
+                visit(statementNoShortIf)
+                writeLn()
 
-        writeLn("jmp $beginForLabel")
-        writeLn("$endForLabel:")
-        writeLn()
+                writeComment("Update for loop variables")
+                val forUpdateOpt = node.getChild("ForUpdateOpt")
+                visit(forUpdateOpt)
+                writeLn()
 
-        writeComment("Pop for loop variables from stack")
+                writeLn("jmp $beginForLabel")
+            })
 
-        check(localVariableDeclarationEnvironment.size - numVariables >= 0) { "It's not possible to remove variables from the stack inside ForStatementNoShortIf" }
+            writeLn("$endForLabel:")
+            writeLn()
 
-        writeLn("add esp, ${(localVariableDeclarationEnvironment.size - numVariables) * 4}")
+            writeComment("Pop for loop variables from stack")
+            check(localVariableDeclarationEnvironment.size - numVariables >= 0) { "It's not possible to remove variables from the stack inside ForStatement" }
+            writeLn("add esp, ${(localVariableDeclarationEnvironment.size - numVariables) * 4}")
+        })
     }
 
     override fun visitMethodDeclaration(node: CSTNode) {
+        if ("native" in getModifiers(node)) {
+            return
+        }
+
+        currentMethodDeclaration = node
+
         formalParameterEnvironment.withNewScope({
             withAssemblyMethodDeclaration(node, {
                 super.visitMethodDeclaration(node)
             })
+            writeLn()
         })
+
+        currentMethodDeclaration = null
     }
 
     override fun visitBlock(node: CSTNode) {
         localVariableDeclarationEnvironment.withNewScope({
             val originalNumVariables = localVariableDeclarationEnvironment.size
-            super.visitBlock(node)
-            val currentNumVariables = localVariableDeclarationEnvironment.size
 
-            check(currentNumVariables >= originalNumVariables) {
-                "Number of variables in scope at end of block is less than number of variables in scope at its beginning"
-            }
+            writeComment("Visiting a block")
+            withIndent({
+                writeLn()
+                super.visitBlock(node)
+                writeLn()
 
-            writeLn("add esp, ${(currentNumVariables - originalNumVariables) * 4}")
+                val currentNumVariables = localVariableDeclarationEnvironment.size
+
+                check(currentNumVariables >= originalNumVariables) {
+                    "Number of variables in scope at end of block is less than number of variables in scope at its beginning"
+                }
+
+                writeComment("Block postamble")
+                writeLn("add esp, ${(currentNumVariables - originalNumVariables) * 4}")
+            })
         })
     }
 
@@ -1703,9 +2137,9 @@ class CodeGenerationVisitor(
     }
 
     override fun visitLeftHandSide(node: CSTNode) {
-        currentLeftHandSide = node
+        leftHandSideStack.push(node)
         super.visitLeftHandSide(node)
-        currentLeftHandSide = null
+        leftHandSideStack.pop()
     }
 
     fun isLValue(node: CSTNode): Boolean {
@@ -1718,7 +2152,11 @@ class CodeGenerationVisitor(
     }
 
     fun getCurrentLeftHandSide(): CSTNode? {
-        return currentLeftHandSide
+        if (leftHandSideStack.isEmpty()) {
+            return null
+        }
+
+        return leftHandSideStack.peek()
     }
 
     companion object {

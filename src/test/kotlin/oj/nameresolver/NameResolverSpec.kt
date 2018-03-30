@@ -1601,13 +1601,22 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
         })
     }
 
-    it("should reject not reject field use in its initializer when it's an assignment") {
-        subject(listOf("""
-            public class A {
-                public int a = (a = 1) + 1;
-                public A() {}
-            }
-        """.trimIndent()))
+    it("should not reject field use in its initializer when it's an assignment") {
+        subject(listOf(
+            """
+                public class A {
+                    public int a = (a = 1) + 1;
+                    public A() {}
+                }
+            """.trimIndent(),
+            """
+                package java.lang;
+
+                public class String {
+                    public String() {}
+                }
+            """.trimIndent()
+        ))
     }
 
     it("should reject field use in its initializer") {
@@ -1765,5 +1774,20 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
                 }
             """.trimIndent()
         ))
+    }
+
+    it("should understand nested LeftHandSides") {
+        val packages = assertFailsWith(TypeCheckingError::class) {
+            subject(listOf(
+                """
+                public class A {
+                    public A() {
+                        int[] a = new int[10];
+                        (a = a).length = 1;
+                    }
+                }
+            """.trimIndent()
+            ))
+        }
     }
 })
