@@ -16,30 +16,33 @@ class InvalidClassOrInterfaceNameError(message: String) : Exception(message)
 class InvalidFileNameError(message: String) : Exception(message)
 
 fun main(args: Array<String>) {
-    if (args.isEmpty()) {
-        System.exit(42)
-    }
+//    if (args.isEmpty()) {
+//        System.exit(42)
+//    }
+//
+//    val filenames = args.toList()
 
-    val filenames = args.toList()
-
-//    val filenames = listOf(
-//        "./test/marmoset/stdlib/5.0/java/io/OutputStream.java",
-//        "./test/marmoset/stdlib/5.0/java/io/PrintStream.java",
-//        "./test/marmoset/stdlib/5.0/java/io/Serializable.java",
-//        "./test/marmoset/stdlib/5.0/java/lang/Boolean.java",
-//        "./test/marmoset/stdlib/5.0/java/lang/Byte.java",
-//        "./test/marmoset/stdlib/5.0/java/lang/Character.java",
-//        "./test/marmoset/stdlib/5.0/java/lang/Class.java",
-//        "./test/marmoset/stdlib/5.0/java/lang/Cloneable.java",
-//        "./test/marmoset/stdlib/5.0/java/lang/Integer.java",
-//        "./test/marmoset/stdlib/5.0/java/lang/Number.java",
-//        "./test/marmoset/stdlib/5.0/java/lang/Object.java",
-//        "./test/marmoset/stdlib/5.0/java/lang/Short.java",
-//        "./test/marmoset/stdlib/5.0/java/lang/String.java",
-//        "./test/marmoset/stdlib/5.0/java/lang/System.java",
-//        "./test/marmoset/stdlib/5.0/java/util/Arrays.java",
-//        "./test/marmoset/a5/J1_A_ArrayStoreLoad.java"
-//    )
+    val filenames = listOf(
+        "./test/marmoset/stdlib/5.0/java/io/OutputStream.java",
+        "./test/marmoset/stdlib/5.0/java/io/PrintStream.java",
+        "./test/marmoset/stdlib/5.0/java/io/Serializable.java",
+        "./test/marmoset/stdlib/5.0/java/lang/Boolean.java",
+        "./test/marmoset/stdlib/5.0/java/lang/Byte.java",
+        "./test/marmoset/stdlib/5.0/java/lang/Character.java",
+        "./test/marmoset/stdlib/5.0/java/lang/Class.java",
+        "./test/marmoset/stdlib/5.0/java/lang/Cloneable.java",
+        "./test/marmoset/stdlib/5.0/java/lang/Integer.java",
+        "./test/marmoset/stdlib/5.0/java/lang/Number.java",
+        "./test/marmoset/stdlib/5.0/java/lang/Object.java",
+        "./test/marmoset/stdlib/5.0/java/lang/Short.java",
+        "./test/marmoset/stdlib/5.0/java/lang/String.java",
+        "./test/marmoset/stdlib/5.0/java/lang/System.java",
+        "./test/marmoset/stdlib/5.0/java/util/Arrays.java",
+        "./test/programs/CallObjectClone.java",
+        "./test/programs/ParentOfCallObjectClone.java",
+        "./test/programs/A.java",
+        "./test/programs/B.java"
+    )
 
     try {
         val baseDfas = BASE_DFA_NAMES

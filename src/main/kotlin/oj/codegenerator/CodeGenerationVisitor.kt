@@ -11,14 +11,14 @@ const val OBJECT_FIELD_OFFSET = 12
 const val ARRAY_V_TABLE_POINTER_OFFSET = 0
 const val ARRAY_SELECTOR_INDEXED_TABLE_POINTER_OFFSET = 4
 const val ARRAY_SUPER_TYPE_TABLE_OFFSET = 8
-const val ARRAY_FIELD_OFFSET = 12
-const val ARRAY_ELEMENT_OFFSET = 16
+const val ARRAY_ELEMENT_TYPE_OFFSET = 12
+const val ARRAY_FIELD_OFFSET = 16
+const val ARRAY_ELEMENT_OFFSET = 20
 
 class CodeGenerationVisitor(
     private val packageManager: PackageManager
 ) : CSTNodeVisitor() {
     open class CodeGenerationError(reason: String): Exception(reason)
-    open class UnimplementedFeature(reason: String): CodeGenerationError(reason)
 
     private val asmWriter = ASMWriter()
     private val localVariableDeclarationEnvironment = Environment()
@@ -58,7 +58,7 @@ class CodeGenerationVisitor(
 
             writeComment("Externs for primitive arrays super type tables")
             primitiveTypes
-                .map({ Type(CSTNode(it), true) })
+                .map({ primitiveType -> Type(CSTNode(primitiveType), true) })
                 .forEach({ primitiveArrayType ->
                     val superTypeTableLabel = packageManager.getSuperTypeTableLabel(primitiveArrayType)
                     writeLn("extern $superTypeTableLabel")
@@ -179,7 +179,7 @@ class CodeGenerationVisitor(
              * Instance field initializers
              */
             writeLn()
-            val instanceFields = packageManager.getClassOverriddenInstanceFields(node)
+            val instanceFields = node.getDescendants({ it.name == "FieldDeclaration" && "static" !in getModifiers(it) })
             val classInstanceFieldInitializerLabel = packageManager.getInstanceFieldInitializerLabel(node)
             withAssemblyMethodDeclaration(classInstanceFieldInitializerLabel, {
                 instanceFields
@@ -410,27 +410,74 @@ class CodeGenerationVisitor(
     }
 
     override fun visitAssignment(node: CSTNode) {
+        val leftHandSide = node.getChild("LeftHandSide")
+        writeComment("Evaluate LeftHandSide")
+        visit(leftHandSide)
+        writeLn()
+
+        writeComment("Save LeftHandSide")
+        writeLn("push eax")
+        writeLn()
+
         val assignmentExpression = node.getChild("AssignmentExpression")
+        val typeOfAssignmentExpression = assignmentExpression.getType()
+        val shouldCheckArrayStore = leftHandSide.children[0].name == "ArrayAccess" && !typeOfAssignmentExpression.isNull() && leftHandSide.getType().isReference()
+
+        if (shouldCheckArrayStore) {
+            writeComment("Save Array address")
+            writeLn("push ebx")
+            writeLn()
+        }
+
         writeComment("Evaluate AssignmentExpression (RHS)")
         visit(assignmentExpression)
         writeLn()
 
-        writeComment("Save AssignmentExpression (RHS) result")
-        writeLn("push eax")
-        writeLn()
+        if (shouldCheckArrayStore) {
+            writeComment("Restore array address")
+            writeLn("pop ebx")
+            writeLn()
 
-        val leftHandSide = node.getChild("LeftHandSide")
-        writeComment("Get Assignment LHS")
-        visit(leftHandSide)
-        writeLn()
+            val arrayStoreValid = genLabel("arrayStoreValid")
+            writeComment("Skip array store check if eval(AssignmentExpression) == null")
+            writeLn("cmp eax, 0")
+            writeLn("je $arrayStoreValid")
+            writeLn()
+
+            withIndent({
+                writeComment("Move to the SuperType table of AssignmentExpression")
+                writeLn("mov ecx, eax")
+                writeLn("add ecx, $OBJECT_SUPER_TYPE_TABLE_OFFSET")
+                writeLn("mov ecx, [ecx]")
+                writeLn()
+
+                writeComment("Store array object's element type in ebx")
+                writeLn("add ebx, $ARRAY_ELEMENT_TYPE_OFFSET")
+                writeLn("mov ebx, [ebx]")
+                writeLn()
+
+                writeComment("Compute type(LeftHandSide) := type(AssignmentExpression)")
+                writeLn("imul ebx, 4")
+                writeLn("add ecx, ebx")
+                writeLn("mov ebx, [ecx]")
+                writeLn()
+
+                writeComment("Throw array store error")
+                writeLn("cmp ebx, 1")
+                writeLn("je $arrayStoreValid")
+                writeLn("call __exception")
+            })
+
+            writeLn("$arrayStoreValid:")
+            writeLn()
+        }
 
         writeComment("Write assignment RHS to LHS")
         writeLn("pop ebx")
-        writeLn("mov [eax], ebx")
+        writeLn("mov [ebx], eax")
         writeLn()
 
-        writeComment("Return value written into assignment")
-        writeLn("mov eax, [eax]")
+        writeComment("Return value is in eax")
     }
 
     override fun visitConditionalOrExpression(node: CSTNode) {
@@ -444,10 +491,18 @@ class CodeGenerationVisitor(
                 val conditionalAndExpression = node.getChild("ConditionalAndExpression")
                 val endLabel = genLabel("end")
 
+                writeComment("ConditionalOrExpression: Evaluate ConditionalOrExpression")
                 visit(conditionalOrExpression)
+                writeLn()
+
+                writeComment("Short-circuit for \"||\"")
                 writeLn("cmp eax, 1")
                 writeLn("je $endLabel")
+                writeLn()
+
+                writeComment("ConditionalOrExpression: Evaluate ConditionalAndExpression")
                 visit(conditionalAndExpression)
+                writeLn()
                 writeLn("$endLabel:")
             }
         }
@@ -464,10 +519,19 @@ class CodeGenerationVisitor(
                 val orExpression = node.getChild("OrExpression")
                 val endLabel = genLabel("end")
 
+                writeComment("ConditionalAndExpression: Evaluate ConditionalAndExpression")
                 visit(conditionalAndExpression)
+                writeLn()
+
+                writeComment("Short-circuit for \"&&\"")
                 writeLn("cmp eax, 0")
                 writeLn("je $endLabel")
+                writeLn()
+
+                writeComment("ConditionalAndExpression: Evaluate OrExpression")
                 visit(orExpression)
+                writeLn()
+
                 writeLn("$endLabel:")
             }
         }
@@ -482,13 +546,22 @@ class CodeGenerationVisitor(
             "OrExpression" -> {
                 val orExpression = node.getChild("OrExpression")
                 val andExpression = node.getChild("AndExpression")
-                val endLabel = genLabel("end")
 
+                writeComment("OrExpression: Evaluate OrExpression")
                 visit(orExpression)
-                writeLn("cmp eax, 1")
-                writeLn("je $endLabel")
+                writeLn()
+
+                writeComment("Save result from OrExpression")
+                writeLn("push eax")
+                writeLn()
+
+                writeComment("Evaluate AndExpression")
                 visit(andExpression)
-                writeLn("$endLabel:")
+                writeLn()
+
+                writeComment("Compute \"|\"")
+                writeLn("pop ebx")
+                writeLn("or eax, ebx")
             }
         }
     }
@@ -502,13 +575,22 @@ class CodeGenerationVisitor(
             "AndExpression" -> {
                 val andExpression = node.getChild("AndExpression")
                 val equalityExpression = node.getChild("EqualityExpression")
-                val endLabel = genLabel("end")
 
+                writeComment("AndExpression: Evaluate AndExpression")
                 visit(andExpression)
-                writeLn("cmp eax, 0")
-                writeLn("je $endLabel")
+                writeLn()
+
+                writeComment("Save result from AndExpression")
+                writeLn("push eax")
+                writeLn()
+
+                writeComment("Evaluate EqualityExpression")
                 visit(equalityExpression)
-                writeLn("$endLabel:")
+                writeLn()
+
+                writeComment("Compute \"&\"")
+                writeLn("pop ebx")
+                writeLn("and eax, ebx")
             }
         }
     }
@@ -587,20 +669,94 @@ class CodeGenerationVisitor(
             return
         }
 
-        writeComment("Move to object's SuperType table")
-        writeLn("add eax, $OBJECT_SUPER_TYPE_TABLE_OFFSET")
-        writeLn("mov eax, [eax]")
+        /**
+         * At runtime, the result of the instanceof operator is true if the value of the RelationalExpression
+         * is not null and the reference could be cast (§15.16) to the ReferenceType without raising a
+         * ClassCastException. Otherwise the result is false.
+         */
+
+        val endLabel = genLabel("endif")
+
+        writeComment("Ensure instanceof returns false if ReferenceType is null")
+        writeLn("cmp eax, 0")
+        writeLn("je $endLabel")
         writeLn()
 
-        val referenceType = node.getChild("ReferenceType")
-        val typeOfReferenceType = referenceType.getType()
-        val indexOfReferenceType = packageManager.getSuperTypeTable(relationalExpression.getType()).keys.indexOf(typeOfReferenceType)
+        withIndent({
+            writeComment("Move to object's SuperType table")
+            writeLn("add eax, $OBJECT_SUPER_TYPE_TABLE_OFFSET")
+            writeLn("mov eax, [eax]")
+            writeLn()
 
-        check(indexOfReferenceType != -1) { "Type of \"ReferenceType\" node not found in SuperType table" }
+            val referenceType = node.getChild("ReferenceType")
+            val typeOfReferenceType = referenceType.getType()
+            val indexOfReferenceType = packageManager.getSuperTypeTable(relationalExpression.getType()).keys.indexOf(typeOfReferenceType)
 
-        writeComment("Calculate instanceof $typeOfReferenceType")
-        writeLn("add eax, ${indexOfReferenceType * 4}")
-        writeLn("mov eax, [eax]")
+            check(indexOfReferenceType != -1) { "Type of \"ReferenceType\" node not found in SuperType table" }
+
+            writeComment("Calculate instanceof $typeOfReferenceType")
+            writeLn("add eax, ${indexOfReferenceType * 4}")
+            writeLn("mov eax, [eax]")
+        })
+        writeLn()
+
+        writeLn("$endLabel:")
+    }
+
+    /**
+     * In `eax` should be the result of the expression
+     */
+    private fun convertToString(expressionType: Type) {
+        val stringClass = packageManager.getJavaLangType("String")
+        val stringType = Type(stringClass!!, false)
+
+        val stringValueOfMethod = stringClass.getDescendant(fun(descendant: CSTNode): Boolean {
+            if (descendant.name != "MethodDeclaration") {
+                return false
+            }
+
+            val methodHeader = descendant.getChild("MethodHeader")
+            val methodDeclarator = methodHeader.getChild("MethodDeclarator")
+            val formalParameterListOpt = methodDeclarator.getChild("FormalParameterListOpt")
+            val formalParameterTypes = getFormalParameterTypes(formalParameterListOpt)
+
+            if (formalParameterTypes.size != 1 || getDeclarationName(descendant) != "valueOf") {
+                return false
+            }
+
+            if (expressionType.isNull()) {
+                val baseClass = packageManager.getJavaLangType("Object")
+                check(baseClass != null) {
+                    "Base class not found."
+                }
+
+                val baseClassType = Type(baseClass!!, false)
+
+                return baseClassType == formalParameterTypes[0]
+            }
+
+            if (packageManager.colonEquals(stringType, expressionType)) {
+                return stringType == formalParameterTypes[0]
+            }
+
+            if (expressionType.isPrimitive()) {
+                return expressionType == formalParameterTypes[0]
+            }
+
+            return packageManager.colonEquals(formalParameterTypes[0], expressionType)
+        })
+
+        writeComment("Push expression result stored in eax as argument to String.valueOf call")
+        writeLn("push eax")
+        writeLn()
+
+        val stringValueOfMethodLabel = packageManager.getClassMemberLabel(stringValueOfMethod)
+        writeLn("call $stringValueOfMethodLabel")
+        writeLn()
+
+        writeComment("Pop formal parameter for method call")
+        writeLn("add esp, 4")
+        writeLn()
     }
 
     override fun visitAdditiveExpression(node: CSTNode) {
@@ -664,6 +820,10 @@ class CodeGenerationVisitor(
                 visit(additiveExpression)
                 writeLn()
 
+                writeComment("Convert AdditiveExpression (eax) to String using String.valueOf")
+                convertToString(additiveExpression.getType())
+                writeLn()
+
                 writeComment("Save AdditiveExpression result on stack")
                 writeLn("push eax")
                 writeLn()
@@ -672,104 +832,15 @@ class CodeGenerationVisitor(
                 visit(multiplicativeExpression)
                 writeLn()
 
+                writeComment("Convert MultiplicativeExpression (eax) to String using String.valueOf")
+                convertToString(multiplicativeExpression.getType())
+                writeLn()
+
                 writeComment("Restore AdditiveExpression from stack")
                 writeLn("pop ebx")
                 writeLn()
 
-                val expressionToConvertToString =
-                    if (typeOfAdditiveExpression != stringType) {
-                        additiveExpression
-                    } else if (typeOfMultiplicativeExpression != stringType) {
-                        multiplicativeExpression
-                    } else {
-                        null
-                    }
-
-                if (expressionToConvertToString != null) {
-                    val stringValueOfMethod = stringClass.getDescendant(fun(descendant: CSTNode): Boolean {
-                        if (descendant.name != "MethodDeclaration") {
-                            return false
-                        }
-
-                        val methodHeader = descendant.getChild("MethodHeader")
-                        val methodDeclarator = methodHeader.getChild("MethodDeclarator")
-                        val formalParameterListOpt = methodDeclarator.getChild("FormalParameterListOpt")
-                        val formalParameterTypes = getFormalParameterTypes(formalParameterListOpt)
-
-                        if (formalParameterTypes.size != 1 || getDeclarationName(descendant) != "valueOf") {
-                            return false
-                        }
-
-                        val expressionToConvertToStringType = expressionToConvertToString.getType()
-
-                        if (expressionToConvertToStringType.isNull()) {
-                            val baseClass = packageManager.getJavaLangType("Object")
-                            check(baseClass != null) {
-                                "Base class not found."
-                            }
-
-                            val baseClassType = Type(baseClass!!, false)
-
-                            return baseClassType == formalParameterTypes[0]
-                        }
-
-                        if (packageManager.colonEquals(stringType, expressionToConvertToStringType)) {
-                            return stringType == formalParameterTypes[0]
-                        }
-
-                        if (expressionToConvertToStringType.isPrimitive()) {
-                            return expressionToConvertToStringType == formalParameterTypes[0]
-                        }
-
-                        return packageManager.colonEquals(formalParameterTypes[0], expressionToConvertToStringType)
-                    })
-
-
-                    if (expressionToConvertToString == additiveExpression) {
-                        writeComment("Converting AdditiveExpression to string")
-                        writeComment("Save MultiplicativeExpression")
-                        writeLn("push eax")
-                        writeLn()
-
-                        writeComment("Push AdditiveExpression as argument to String.valueOf")
-                        writeLn("push ebx")
-                        writeLn()
-                    } else {
-                        writeComment("Converting MultiplicativeExpression to string")
-                        writeComment("Save AdditiveExpression")
-                        writeLn("push ebx")
-                        writeLn()
-
-                        writeComment("Push MultiplicativeExpression as argument to String.valueOf")
-                        writeLn("push eax")
-                        writeLn()
-                    }
-
-                    val stringValueOfMethodLabel = packageManager.getClassMemberLabel(stringValueOfMethod!!)
-                    writeLn("call $stringValueOfMethodLabel")
-                    writeLn()
-
-                    writeComment("Pop formal parameter for method call")
-                    writeLn("add esp, 4")
-                    writeLn()
-
-                    if (expressionToConvertToString == additiveExpression) {
-                        writeComment("Just converted AdditiveExpression, move it to ebx")
-                        writeLn("mov ebx, eax")
-                        writeLn()
-
-                        writeComment("MultiplicativeExpression was saved on stack, moving to eax")
-                        writeLn("pop eax")
-                        writeLn()
-                    } else {
-                        writeComment("Just converted MultiplicativeExpression, it's already in eax")
-                        writeComment("AdditiveExpression was saved on stack, moving to ebx")
-                        writeLn("pop ebx")
-                        writeLn()
-                    }
-                }
-
-                writeComment("State: ebx = AdditiveExpression and eax = MultiplicativeExpression")
+                writeComment("State: ebx = eval(AdditiveExpression) and eax = eval(MultiplicativeExpression)")
                 writeComment("Push arguments for String.concat")
                 writeLn("push ebx")
                 writeLn("push eax")
@@ -903,7 +974,7 @@ class CodeGenerationVisitor(
             )
         }
 
-        writeNullPointerException()
+        writeNullPointerCheck()
         writeLn()
 
         if (!type.isArray && methodDeclaration.name == "AbstractMethodDeclaration") {
@@ -961,7 +1032,7 @@ class CodeGenerationVisitor(
         }
     }
 
-    fun writeNullPointerException() {
+    fun writeNullPointerCheck() {
         writeComment("NullPointerException: assert(eax != null)")
         val pointerNotNull = genLabel("pointerNotNull")
         writeLn("cmp eax, 0")
@@ -987,7 +1058,7 @@ class CodeGenerationVisitor(
                         when (prefixName.getNameNodeClassification()!!) {
 
                             NameNodeClassification.Expression -> {
-                                writeNullPointerException()
+                                writeNullPointerCheck()
                                 writeLn()
 
                                 val typeOfPrefixName = prefixName.getType()
@@ -1318,6 +1389,7 @@ class CodeGenerationVisitor(
         writeLn()
 
         callMethod(arguments)
+        writeLn()
 
         writeComment("Instance method call: Pop `this` off the stack")
         writeLn("add esp, 4")
@@ -1388,7 +1460,53 @@ class CodeGenerationVisitor(
         writeLn("pop eax")
     }
 
+    fun writeTypeAssignableCheck(type: Type) {
+        writeComment("Check if object eax := \"$type\"")
+        writeComment("Move to SuperType table")
+        writeLn("mov ecx, eax")
+        writeLn("add ecx, $OBJECT_SUPER_TYPE_TABLE_OFFSET")
+        writeLn("mov ecx, [ecx]")
+        writeLn()
+
+        val indexOfTypeInSuperTable = packageManager.getSuperTypeTableKeys().indexOf(type)
+        check(indexOfTypeInSuperTable != -1) { "Index of \"$type\" not found in SuperType table" }
+
+        writeComment("Access SuperType table entry of \"$type\"")
+        writeLn("add ecx, ${indexOfTypeInSuperTable * 4}")
+        writeLn("mov ecx, [ecx]")
+        writeLn()
+
+        val objectIsTypeAssignable = genLabel("objectIsTypeAssignable")
+        writeComment("Raise exception when object (eax) doesn't implement \"$type\"")
+        writeLn("cmp ecx, 1")
+        writeLn("je $objectIsTypeAssignable")
+        writeLn("call __exception")
+        writeLn("$objectIsTypeAssignable:")
+    }
+
     override fun visitMethodInvocation(node: CSTNode) {
+        val baseClass = packageManager.getJavaLangType("Object")!!
+
+        val objectCloneMethod = baseClass.getDescendant({ descendant ->
+            if (descendant.name != "MethodDeclaration" || getDeclarationName(descendant) != "clone") {
+                false
+            } else {
+                val methodHeader = descendant.getChild("MethodHeader")
+                val methodDeclarator = methodHeader.getChild("MethodDeclarator")
+                val formalParameterListOpt = methodDeclarator.getChild("FormalParameterListOpt")
+
+                formalParameterListOpt.children.isEmpty()
+            }
+        })
+
+        val cloneableInterface = packageManager.getJavaLangType("Cloneable")!!
+        val cloneableType = Type(cloneableInterface, false)
+
+        val writeImplementsCloneableCheck = {
+            writeComment("Since calling \"java.lang.Object.clone()\", check if object implements \"$cloneableType\"")
+            writeTypeAssignableCheck(cloneableType)
+        }
+
         when (node.children[0].name) {
             "Name" -> {
                 val nameNode = node.getChild("Name")
@@ -1404,6 +1522,11 @@ class CodeGenerationVisitor(
                     callMethod(arguments)
                 } else {
                     writeComment("Calling instance method \"$methodName\"")
+                    if (nameNode.getDeclaration() == objectCloneMethod) {
+                        writeImplementsCloneableCheck()
+                        writeLn()
+                    }
+
                     callInstanceMethod(arguments)
                 }
             }
@@ -1427,6 +1550,11 @@ class CodeGenerationVisitor(
                 }
 
                 writeComment("Calling instance method \"$primaryType.${identifier.lexeme}\"")
+                if (methodDeclaration == objectCloneMethod) {
+                    writeImplementsCloneableCheck()
+                    writeLn()
+                }
+
                 callInstanceMethod(arguments)
             }
         }
@@ -1452,7 +1580,7 @@ class CodeGenerationVisitor(
         visit(primary)
         writeLn()
 
-        writeNullPointerException()
+        writeNullPointerCheck()
         writeLn()
 
         val typeOfPrimary = primary.getType()
@@ -1482,33 +1610,37 @@ class CodeGenerationVisitor(
     }
 
     override fun visitArrayAccess(node: CSTNode) {
+        writeComment("Evaluate ${node.children[0].name}")
+        visit(node.children[0])
+        writeLn()
+
+        writeNullPointerCheck()
+        writeLn()
+
+        writeComment("Save array object")
+        writeLn("push eax")
+        writeLn()
+
         val expression = node.getChild("Expression")
-        writeComment("Evaluate Expression inside ArrayAccess")
+        writeComment("Evaluate array index inside ArrayAccess")
         visit(expression)
+        writeLn()
+
+        writeComment("Move array index into ecx")
+        writeLn("mov ecx, eax")
+        writeLn()
+
+        writeComment("Restore array object into eax")
+        writeLn("pop eax")
         writeLn()
 
         val arrayIndexPositive = genLabel("arrayIndexPositive")
 
         writeComment("Ensure array index is positive")
-        writeLn("cmp eax, 0")
+        writeLn("cmp ecx, 0")
         writeLn("jge $arrayIndexPositive")
         writeLn("call __exception")
         writeLn("$arrayIndexPositive:")
-        writeLn()
-
-        writeComment("Save array index")
-        writeLn("push eax")
-        writeLn()
-
-        writeComment("Evaluate ${node.children[0].name}")
-        visit(node.children[0])
-        writeLn()
-
-        writeNullPointerException()
-        writeLn()
-
-        writeComment("Restore array index")
-        writeLn("pop ebx")
         writeLn()
 
         writeComment("Get array length")
@@ -1519,16 +1651,22 @@ class CodeGenerationVisitor(
 
         val arrayIndexInBounds = genLabel("arrayIndexInBounds")
         writeComment("Ensure array index is less than length")
-        writeLn("cmp ebx, edx")
+        writeLn("cmp ecx, edx")
         writeLn("jl $arrayIndexInBounds")
         writeLn("call __exception")
         writeLn("$arrayIndexInBounds:")
         writeLn()
 
+        if (isLValue(node)) {
+            writeComment("In LValue, so move array address to ebx")
+            writeLn("mov ebx, eax")
+            writeLn()
+        }
+
         writeComment("Get address of array element offset")
-        writeLn("imul ebx, 4")
-        writeLn("add ebx, $ARRAY_ELEMENT_OFFSET")
-        writeLn("add eax, ebx")
+        writeLn("imul ecx, 4")
+        writeLn("add ecx, $ARRAY_ELEMENT_OFFSET")
+        writeLn("add eax, ecx")
 
         if (!isLValue(node)) {
             writeLn()
@@ -1774,20 +1912,37 @@ class CodeGenerationVisitor(
         }
 
         val vTableLabel = packageManager.getVTableLabel(baseClass)
-        writeComment("Initialize VTable pointer")
+        writeComment("Initialize array VTable pointer")
         writeLn("mov ebx, eax")
         writeLn("add ebx, $ARRAY_V_TABLE_POINTER_OFFSET")
         writeLn("mov ecx, $vTableLabel")
         writeLn("mov [ebx], ecx")
         writeLn()
 
-        val superTypeTableLabel = packageManager.getSuperTypeTableLabel(node.getType())
-        writeComment("Initialize SuperType table pointer")
+        val typeOfNode = node.getType()
+
+        val superTypeTableLabel = packageManager.getSuperTypeTableLabel(typeOfNode)
+        writeComment("Initialize array SuperType table pointer")
         writeLn("mov ebx, eax")
         writeLn("add ebx, $ARRAY_SUPER_TYPE_TABLE_OFFSET")
         writeLn("mov ecx, $superTypeTableLabel")
         writeLn("mov [ebx], ecx")
         writeLn()
+
+        val typeOfArrayElement = Type(typeOfNode.type, false)
+        if (typeOfArrayElement.isReference()) {
+            val indedOfArrayElementTypeInSuperTable = packageManager.getSuperTypeTableKeys().indexOf(typeOfArrayElement)
+            check(indedOfArrayElementTypeInSuperTable != -1) {
+                "Couldn't find type of \"$typeOfArrayElement\" in SuperType table"
+            }
+
+            writeComment("Initialize array element type")
+            writeLn("mov ebx, eax")
+            writeLn("add ebx, $ARRAY_ELEMENT_TYPE_OFFSET")
+            writeLn("mov ecx, $indedOfArrayElementTypeInSuperTable")
+            writeLn("mov [ebx], ecx")
+            writeLn()
+        }
 
         // Skip Section Indexed table
 

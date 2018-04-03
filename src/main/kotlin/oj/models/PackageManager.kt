@@ -129,7 +129,7 @@ class PackageManager(
             return true
         }
 
-        val extendedInterfaces = child.getChild("ExtendsInterfaceOpt").getDescendants("Name").map({ it.getDeclaration() })
+        val extendedInterfaces = child.getChild("ExtendsInterfacesOpt").getDescendants("Name").map({ it.getDeclaration() })
 
         if (extendedInterfaces.isEmpty()) {
             return false
@@ -142,14 +142,74 @@ class PackageManager(
         return false
     }
 
-    fun canAccessProtectedMethodsOf(currentClass: CSTNode, otherClass: CSTNode): Boolean {
-        if (currentClass.name != "ClassDeclaration" && otherClass.name != "ClassDeclaration") {
-            throw PackageManagerError("Expected currentClass and otherClass to be ClassDeclarations")
+    fun canMembersReplaceOneAnother(member1: CSTNode, member2: CSTNode): Boolean {
+        if (member1.name == member2.name) {
+            if (member1.name == "FieldDeclaration") {
+                return getDeclarationName(member1) == getDeclarationName(member2)
+            }
+
+            if (member1.name == "MethodDeclaration") {
+                return canMethodsReplaceOneAnother(
+                    member2.getChild("MethodHeader"),
+                    member1.getChild("MethodHeader")
+                )
+            }
         }
 
-        val isInSamePackage = getPackageNameOfType(currentClass) == getPackageNameOfType(otherClass)
+        return false
+    }
 
-        return isSubClass(currentClass, otherClass) || isInSamePackage
+    /**
+     * Doesn't return the members of interfaces in its class heirarchy.
+     */
+    fun getClassAccessibleMembers(currentClass: CSTNode, classToInspect: CSTNode, shouldAccessInstanceMembers: Boolean): List<CSTNode> {
+        if (currentClass.name != "ClassDeclaration") {
+            throw PackageManagerError("Tried to call method with currentClass.name == \"${currentClass.name}\" != \"ClassDeclaration\"")
+        }
+
+        val canAddProtectedMethods = isSubClass(classToInspect, currentClass)
+
+        var accessibleMembers = mutableListOf<CSTNode>()
+        var inaccessibleMembers = mutableListOf<CSTNode>()
+
+        var currentClassToInspect: CSTNode? = classToInspect
+
+        while (currentClassToInspect != null) {
+            val classBody = currentClassToInspect.getChild("ClassBody")
+            val members = classBody
+                .getDescendants({ it.name in listOf("FieldDeclaration", "MethodDeclaration", "AbstractMethodDeclaration") })
+                .filter({ if (shouldAccessInstanceMembers) "static" !in getModifiers(it) else "static" in getModifiers(it) })
+
+            val publicMembers = members.filter({ member -> "public" in getModifiers(member) })
+            accessibleMembers.addAll(publicMembers)
+
+            var protectedMembers = members.filter({ member -> "protected" in getModifiers(member) })
+
+            if (getPackageNameOfType(currentClass) == getPackageNameOfType(currentClassToInspect)) {
+                accessibleMembers.addAll(protectedMembers)
+            } else if (isSubClass(currentClass, currentClassToInspect)) {
+                protectedMembers = protectedMembers.filter({ protectedMember ->
+                    inaccessibleMembers.filter({ inaccessibleMember ->
+                        canMembersReplaceOneAnother(inaccessibleMember, protectedMember)
+                    }).isEmpty()
+                })
+                if (shouldAccessInstanceMembers) {
+                    if (canAddProtectedMethods) {
+                        accessibleMembers.addAll(protectedMembers)
+                    } else {
+                        inaccessibleMembers.addAll(protectedMembers)
+                    }
+                } else {
+                    accessibleMembers.addAll(protectedMembers)
+                }
+            } else {
+                inaccessibleMembers.addAll(protectedMembers)
+            }
+
+            currentClassToInspect = getSuperClass(currentClassToInspect)
+        }
+
+        return accessibleMembers
     }
 
     fun getAccessibleInstanceMembers(currentClass: CSTNode, typeToInspect: CSTNode): List<CSTNode> {
@@ -158,67 +218,8 @@ class PackageManager(
         }
 
         return if (typeToInspect.name == "ClassDeclaration") {
-            val shouldAddProtectedMethods = canAccessProtectedMethodsOf(typeToInspect, currentClass)
-
             val classToInspect = typeToInspect
-
-            val accessibleMembers = mutableListOf<CSTNode>()
-            val inaccessibleMembers = mutableSetOf<CSTNode>()
-
-            var currentClassToInspect = classToInspect
-
-            while (true) {
-                val classBody = currentClassToInspect.getChild("ClassBody")
-                val members = classBody.getDescendants({
-                    it.name in listOf("FieldDeclaration", "MethodDeclaration", "AbstractMethodDeclaration") && "static" !in getModifiers(it)
-                })
-
-                val publicMembers = members.filter({ member -> "public" in getModifiers(member) })
-
-                accessibleMembers.addAll(publicMembers)
-
-                if (shouldAddProtectedMethods) {
-                    val protectedMembers = members.filter({ member -> "protected" in getModifiers(member) })
-
-                    if (canAccessProtectedMethodsOf(currentClass, currentClassToInspect)) {
-                        accessibleMembers.addAll(protectedMembers)
-                    } else {
-                        inaccessibleMembers.addAll(protectedMembers)
-                    }
-                }
-
-                val superOpt = currentClassToInspect.getChild("SuperOpt")
-                if (superOpt.children.isNotEmpty()) {
-                    currentClassToInspect = superOpt.getDescendant("Name").getDeclaration()
-                } else {
-                    val baseSuperClass = getJavaLangType("Object")
-
-                    if (baseSuperClass == null || currentClassToInspect === baseSuperClass) {
-                        break
-                    }
-
-                    currentClassToInspect = baseSuperClass
-                }
-            }
-
-            return accessibleMembers.filter({ accessibleMember ->
-                inaccessibleMembers.filter(fun (inaccessibleMember: CSTNode): Boolean {
-                    if (inaccessibleMember.name == accessibleMember.name) {
-                        if (inaccessibleMember.name == "FieldDeclaration") {
-                            return getDeclarationName(inaccessibleMember) == getDeclarationName(accessibleMember)
-                        }
-
-                        if (inaccessibleMember.name == "MethodDeclaration") {
-                            return canMethodsReplaceOneAnother(
-                                accessibleMember.getChild("MethodHeader"),
-                                inaccessibleMember.getChild("MethodHeader")
-                            )
-                        }
-                    }
-
-                    return false
-                }).isEmpty()
-            }) + getAllMethodsOfAllInterfacesImplementedInClassHierarchyOf(classToInspect)
+            getClassAccessibleMembers(currentClass, classToInspect, true) + getAllMethodsOfAllInterfacesImplementedInClassHierarchyOf(classToInspect)
         } else if (typeToInspect.name == "InterfaceDeclaration"){
             getInterfaceInheritedMethods(typeToInspect)
         } else {
@@ -227,68 +228,39 @@ class PackageManager(
     }
 
     fun getAccessibleStaticMembers(currentClass: CSTNode, classToInspect: CSTNode): List<CSTNode> {
-        if (currentClass.name != "ClassDeclaration" || classToInspect.name != "ClassDeclaration") {
-            throw PackageManagerError("Tried to call getAccessibleStaticMembers on a non-class arguments.")
-        }
-
-        val accessibleMembers = mutableListOf<CSTNode>()
-        val inaccessibleMembers = mutableSetOf<CSTNode>()
-
-        var currentClassToInspect = classToInspect
-
-        while (true) {
-            val classBody = currentClassToInspect.getChild("ClassBody")
-            val members = classBody.getDescendants({
-                it.name in listOf("FieldDeclaration", "MethodDeclaration") && "static" in getModifiers(it)
-            })
-
-            val publicMembers = members.filter({ member -> "public" in getModifiers(member) })
-            val protectedMembers = members.filter({ member -> "protected" in getModifiers(member) })
-
-            accessibleMembers.addAll(publicMembers)
-
-            if (canAccessProtectedMethodsOf(currentClass, currentClassToInspect)) {
-                accessibleMembers.addAll(protectedMembers)
-            } else {
-                inaccessibleMembers.addAll(protectedMembers)
-            }
-
-            val superOpt = currentClassToInspect.getChild("SuperOpt")
-            if (superOpt.children.isNotEmpty()) {
-                currentClassToInspect = superOpt.getDescendant("Name").getDeclaration()
-            } else {
-                val baseSuperClass = getJavaLangType("Object")
-
-                if (baseSuperClass == null || currentClassToInspect === baseSuperClass) {
-                    break
-                }
-
-                currentClassToInspect = baseSuperClass
-            }
-        }
-
-        return accessibleMembers.filter({ accessibleMember ->
-            inaccessibleMembers.filter(fun (inaccessibleMember: CSTNode): Boolean {
-                if (inaccessibleMember.name == accessibleMember.name) {
-                    if (inaccessibleMember.name == "FieldDeclaration") {
-                        return getDeclarationName(inaccessibleMember) == getDeclarationName(accessibleMember)
-                    }
-
-                    if (inaccessibleMember.name == "MethodDeclaration") {
-                        return canMethodsReplaceOneAnother(
-                            accessibleMember.getChild("MethodHeader"),
-                            inaccessibleMember.getChild("MethodHeader")
-                        )
-                    }
-                }
-
-                return false
-            }).isEmpty()
-        })
+        return getClassAccessibleMembers(currentClass, classToInspect, false)
     }
 
     open class HierarchyCheckingError(reason: String) : PackageManagerError(reason)
     class InterfaceHierarchyIsCyclic(interfaceName: String, firstDuplicateInterface: String) : HierarchyCheckingError("Detected a duplicate interface \"$firstDuplicateInterface\" in interface \"$interfaceName\"'s hierarchy.")
+
+    private var baseInterfaceMethods: List<CSTNode>? = null
+
+    fun getBaseInterfaceMethods(): List<CSTNode> {
+        if (baseInterfaceMethods != null) {
+            return baseInterfaceMethods!!
+        }
+
+        val baseSuperClass = getJavaLangType("Object")
+        if (baseSuperClass == null) {
+            baseInterfaceMethods = listOf()
+            return baseInterfaceMethods!!
+        }
+
+        val baseSuperClassClassBody = baseSuperClass.getChild("ClassBody")
+        val baseSuperClassMethodDeclarations = baseSuperClassClassBody.getDescendants("MethodDeclaration")
+        val baseSuperInterfaceAbstractMethodDeclarations = baseSuperClassMethodDeclarations
+            .filter({ "public" in getModifiers(it) })
+            .map({ methodDeclaration ->
+                val methodHeader = methodDeclaration.getChild("MethodHeader")
+                val semicolon = CSTNode(";", "", mutableListOf())
+                val abstractMethodDeclaration = CSTNode("AbstractMethodDeclaration", "", mutableListOf(methodHeader, semicolon))
+                abstractMethodDeclaration
+            })
+
+        baseInterfaceMethods = baseSuperInterfaceAbstractMethodDeclarations
+        return baseInterfaceMethods!!
+    }
 
     fun getInterfaceInheritedMethods(interfaceDeclaration: CSTNode, typeName: String = getDeclarationName(interfaceDeclaration), visited: MutableSet<CSTNode> = mutableSetOf()): List<CSTNode> {
         if (interfaceDeclaration.name != "InterfaceDeclaration") {
@@ -314,19 +286,7 @@ class PackageManager(
         visited.remove(interfaceDeclaration)
 
         if (extendedInterfaceNames.isEmpty()) {
-            val baseSuperClass = getJavaLangType("Object")
-            if (baseSuperClass != null) {
-                val baseSuperClassClassBody = baseSuperClass.getChild("ClassBody")
-                val baseSuperClassMethodDeclarations = baseSuperClassClassBody.getDescendants("MethodDeclaration")
-                val baseSuperInterfaceAbstractMethodDeclarations = baseSuperClassMethodDeclarations.map({ methodDeclaration ->
-                    val methodHeader = methodDeclaration.getChild("MethodHeader")
-                    val semicolon = CSTNode(";", "", mutableListOf())
-                    val abstractMethodDeclaration = CSTNode("AbstractMethodDeclaration", "", mutableListOf(methodHeader, semicolon))
-                    abstractMethodDeclaration
-                })
-
-                extendedAbstractMethods += baseSuperInterfaceAbstractMethodDeclarations
-            }
+            extendedAbstractMethods += getBaseInterfaceMethods()
         }
 
         return abstractMethodDeclarations + extendedAbstractMethods
@@ -334,21 +294,21 @@ class PackageManager(
 
     /**
      * Gets all the methods from all the interfaces implemented by this class or any classes in its hierarchy
+     * Doesn't include java.lang.Object public methods
      */
     fun getAllMethodsOfAllInterfacesImplementedInClassHierarchyOf(classDeclaration: CSTNode): List<CSTNode> {
         if (classDeclaration.name != "ClassDeclaration") {
             throw PackageManagerError("Tried to call getAllInterfacesImplementedByClass on a non-class: ${classDeclaration.name}")
         }
 
+
         val extendedInterfaces = classDeclaration.getChild("InterfacesOpt").getDescendants("Name").map({ it.getDeclaration() })
-        val abstractMethods = extendedInterfaces.flatMap({ getInterfaceInheritedMethods(it) })
+        val abstractMethods = extendedInterfaces.flatMap({ getInterfaceInheritedMethods(it) - getBaseInterfaceMethods() })
 
-        val superOpt = classDeclaration.getChild("SuperOpt")
-
+        val superClass = getSuperClass(classDeclaration)
         val superClassAbstractMethods =
-            if (superOpt.children.size == 1) {
-                val superClassDeclaration = superOpt.getDescendant("Name").getDeclaration()
-                getAllMethodsOfAllInterfacesImplementedInClassHierarchyOf(superClassDeclaration)
+            if (superClass != null) {
+                getAllMethodsOfAllInterfacesImplementedInClassHierarchyOf(superClass)
             } else {
                 listOf()
             }
@@ -497,8 +457,7 @@ class PackageManager(
         val cloneableDeclaration = getJavaLangType("Cloneable")
         val serializableDeclaration = typesDeclaredInPackages["java.io"].orEmpty()["Serializable"]
 
-        val primitiveTypesWithoutNull = setOf("byte", "short", "int", "char", "boolean")
-        if (!typeOfB.isArray && !typeOfA.isArray && typeOfB.type.name in primitiveTypesWithoutNull && typeOfA.type.name in primitiveTypesWithoutNull) {
+        if (!typeOfB.isArray && !typeOfA.isArray && typeOfB.type.name in primitiveTypes && typeOfA.type.name in primitiveTypes) {
             if (typeOfB.type.name == "byte") {
                 return typeOfA.type.name in listOf("short", "int", "byte")
             }
@@ -517,12 +476,16 @@ class PackageManager(
         } else if (typeOfB.isArray && (typeOfA.type == baseSuperClass || typeOfA.type == serializableDeclaration || typeOfA.type == cloneableDeclaration) && !typeOfA.isArray) {
             // Goes in here for reference and primitive arrays.
             return true
-        } else if (typeOfB.isArray && typeOfB.type.name in primitiveTypesWithoutNull) {
+        } else if (typeOfB.isArray && typeOfB.type.name in primitiveTypes) {
             if (typeOfA.type.name == typeOfB.type.name && typeOfA.isArray) {
                 return true
             }
         } else if (typeOfB.type.name == "InterfaceDeclaration" && areBothArraysOrNonArrays) {
-            if (isSubInterface(typeOfB.type, typeOfA.type)) {
+            if (typeOfA.type.name == "InterfaceDeclaration") {
+                if (isSubInterface(typeOfB.type, typeOfA.type)) {
+                    return true
+                }
+            } else if (typeOfA.type == baseSuperClass) {
                 return true
             }
         } else if (typeOfB.type.name == "ClassDeclaration" && areBothArraysOrNonArrays) {
@@ -734,6 +697,7 @@ class PackageManager(
                 .map({ compilationUnit -> compilationUnit.getDescendant(isClassOrInterfaceDeclaration)})
                 .filter({ type -> type.name == "InterfaceDeclaration" })
                 .flatMap({ it.getDescendants("AbstractMethodDeclaration") })
+                .plus(getBaseInterfaceMethods())
         }
 
         return allInterfaceMethodsInProgram!!
@@ -741,12 +705,8 @@ class PackageManager(
 
     private var superTypeTables = mutableMapOf<Type, Map<Type, Boolean>>()
 
-    fun getSuperTypeTable(typeToInspect: Type): Map<Type, Boolean> {
-        if (typeToInspect in superTypeTables) {
-            return superTypeTables[typeToInspect]!!
-        }
-
-        val typesInProgram = packages
+    fun getSuperTypeTableKeys(): List<Type> {
+        return packages
             .values
             .flatten()
             .map({ compilationUnit -> compilationUnit.getDescendant(isClassOrInterfaceDeclaration) })
@@ -757,6 +717,14 @@ class PackageManager(
                     Type(CSTNode(primitiveType), true)
                 })
             )
+    }
+
+    fun getSuperTypeTable(typeToInspect: Type): Map<Type, Boolean> {
+        if (typeToInspect in superTypeTables) {
+            return superTypeTables[typeToInspect]!!
+        }
+
+        val typesInProgram = getSuperTypeTableKeys()
 
         val superTypeTable = typesInProgram
             .fold(mutableMapOf<Type, Boolean>(), { map, type ->

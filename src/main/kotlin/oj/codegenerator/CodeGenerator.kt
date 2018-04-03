@@ -96,12 +96,12 @@ class CodeGenerator {
             asmWriter.writeLn("section .data")
 
             primitiveTypes
-                .map({ Type(CSTNode(it), true) })
-                .forEach({ primitiveArrayType ->
-                    val superTypeTableLabel = packageManager.getSuperTypeTableLabel(primitiveArrayType)
+                .map({ primitiveType -> Type(CSTNode(primitiveType), true) })
+                .forEach({ type ->
+                    val superTypeTableLabel = packageManager.getSuperTypeTableLabel(type)
                     asmWriter.writeLn("global $superTypeTableLabel")
                     asmWriter.writeLn("$superTypeTableLabel:")
-                    val superTypeTable = packageManager.getSuperTypeTable(primitiveArrayType)
+                    val superTypeTable = packageManager.getSuperTypeTable(type)
 
                     asmWriter.withIndent({
                         superTypeTable.forEach({(type, isSuperType) ->

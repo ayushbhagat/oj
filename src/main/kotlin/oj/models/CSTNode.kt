@@ -395,7 +395,7 @@ fun isInterfaceImplementedByClass(interfaceDeclaration: CSTNode, classDeclaratio
 
     while (true) {
         val queue = LinkedList<CSTNode>()
-        val extendedInterfaces = classDeclaration.getChild("InterfacesOpt").getDescendants("Name").map({ it.getDeclaration() })
+        val extendedInterfaces = currentClass.getChild("InterfacesOpt").getDescendants("Name").map({ it.getDeclaration() })
         queue.addAll(extendedInterfaces)
 
         while (queue.isNotEmpty()) {
@@ -403,7 +403,6 @@ fun isInterfaceImplementedByClass(interfaceDeclaration: CSTNode, classDeclaratio
             if (interfaceDeclaration === interfaceBeingExamined) {
                 return true
             }
-
 
             queue.addAll(interfaceBeingExamined.getChild("ExtendsInterfacesOpt").getDescendants("Name").map({ it.getDeclaration() }))
         }
