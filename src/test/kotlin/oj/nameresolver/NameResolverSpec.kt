@@ -1,6 +1,7 @@
 package oj.nameresolver
 
 import oj.models.CSTNode
+import oj.models.Environment
 import oj.models.NFA
 import oj.models.PackageManager
 import oj.parser.CFGStateDataHelper
@@ -66,8 +67,6 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
 
                 packages[packageName] = pkg
             })
-
-
 
             NameResolver.resolveNames(PackageManager(packages))
             return packages
@@ -1602,13 +1601,22 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
         })
     }
 
-    it("should reject not reject field use in its initializer when it's an assignment") {
-        subject(listOf("""
-            public class A {
-                public int a = (a = 1) + 1;
-                public A() {}
-            }
-        """.trimIndent()))
+    it("should not reject field use in its initializer when it's an assignment") {
+        subject(listOf(
+            """
+                public class A {
+                    public int a = (a = 1) + 1;
+                    public A() {}
+                }
+            """.trimIndent(),
+            """
+                package java.lang;
+
+                public class String {
+                    public String() {}
+                }
+            """.trimIndent()
+        ))
     }
 
     it("should reject field use in its initializer") {
@@ -1633,4 +1641,153 @@ object NameResolverSpec : SubjectSpek<(List<String>) -> Map<String, List<CSTNode
         })
     }
 
+    it("should reject programs where package names are qualified types") {
+        assertFailsWith(EitherPackageNameOrQualifiedType::class, {
+            subject(listOf(
+                """
+                package A.B;
+
+                public class C {
+                    public C() {}
+                }
+
+                """.trimIndent(),
+                """
+                package A;
+
+                public class B {
+                    public B() {}
+                }
+
+                """.trimIndent()))
+        })
+    }
+
+    it("should reject programs where prefixes of package names are qualified types") {
+        assertFailsWith(EitherPackageNameOrQualifiedType::class, {
+            subject(listOf(
+                """
+                package A.B.D;
+
+                public class C {
+                    public C() {}
+                }
+
+                """.trimIndent(),
+                """
+                package A;
+
+                public class B {
+                    public B() {}
+                }
+
+                """.trimIndent()))
+        })
+    }
+
+    it("should allow arrays to call java.lang.Object methods") {
+        subject(listOf(
+            """
+                public class A {
+                    public A() {
+                        int[] a = new int[5];
+                        a.hashCode();
+                    }
+                }
+            """.trimIndent(),
+            """
+                package java.lang;
+                
+                public class Object {
+                    public Object() {}
+                    public int hashCode() {}
+                }
+            """.trimIndent()
+        ))
+    }
+
+    it("should allow arrays to call java.lang.Cloneable methods") {
+        subject(listOf(
+            """
+                public class A {
+                    public A() {
+                        int[] a = new int[5];
+                        a.clone();
+                    }
+                }
+            """.trimIndent(),
+            """
+                package java.lang;
+
+                public interface Cloneable {
+                    public Cloneable clone();
+                }
+            """.trimIndent()
+        ))
+    }
+
+    it("should allow arrays to call java.io.Serializable methods") {
+        val packages = subject(listOf(
+            """
+                public class A {
+                    public A() {
+                        int[] a = new int[5];
+                        a.serialize();
+                    }
+                }
+            """.trimIndent(),
+            """
+                package java.io;
+
+                public interface Serializable {
+                    public int serialize();
+                }
+            """.trimIndent()
+        ))
+    }
+
+    it("should resolve interface methods") {
+        val packages = subject(listOf(
+            """
+                public class A {
+                    public A(Foo foo) {
+                        foo.bar();
+                    }
+                }
+            """.trimIndent(),
+            """
+                public interface Foo {
+                    public int bar();
+                }
+            """.trimIndent()
+        ))
+    }
+    
+    it("should allow array length access in LValue if it appears in expression") {
+        val packages = subject(listOf(
+            """
+                public class A {
+                    public A() {
+                        int[] a = new int[5];
+                        a[a.length - 1] = 1;
+                    }
+                }
+            """.trimIndent()
+        ))
+    }
+
+    it("should understand nested LeftHandSides") {
+        val packages = assertFailsWith(TypeCheckingError::class) {
+            subject(listOf(
+                """
+                public class A {
+                    public A() {
+                        int[] a = new int[10];
+                        (a = a).length = 1;
+                    }
+                }
+            """.trimIndent()
+            ))
+        }
+    }
 })

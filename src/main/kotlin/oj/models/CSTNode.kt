@@ -4,11 +4,18 @@ import java.util.*
 
 open class CSTNodeError(reason: String): Exception(reason)
 
-class FoundNoChild: CSTNodeError("Found no descendants, expected 1.")
-class FoundManyChildren: CSTNodeError("Found many descendants, expected 1.")
+class FoundNoChild: CSTNodeError("Found no child, expected 1.")
+class FoundManyChildren: CSTNodeError("Found many children, expected 1.")
 
 class FoundNoDescendant : CSTNodeError("Found no descendants, expected 1.")
 class FoundManyDescendants: CSTNodeError("Found many descendants, expected 1.")
+
+enum class NameNodeClassification {
+    Package,
+    Type,
+    Expression,
+    Method
+}
 
 class CSTNode(
     val name: String,
@@ -19,11 +26,28 @@ class CSTNode(
         private val declarations: MutableMap<CSTNode, CSTNode> = mutableMapOf()
         private val types: MutableMap<CSTNode, Type> = mutableMapOf()
         private val downCast: MutableSet<CSTNode> = mutableSetOf()
+        private val nameNodeClassifications: MutableMap<CSTNode, NameNodeClassification> = mutableMapOf()
+    }
+
+    fun setNameNodeClassification(classification: NameNodeClassification) {
+        if (name != "Name") {
+            throw CSTNodeError("Tried to set name node classification from non-name \"$name\" node.")
+        }
+
+        nameNodeClassifications[this] = classification
+    }
+
+    fun getNameNodeClassification(): NameNodeClassification? {
+        if (name != "Name") {
+            throw CSTNodeError("Tried to get name node classification from non-name \"$name\" node.")
+        }
+
+        return nameNodeClassifications[this]
     }
 
     // TODO: Two names that are value equal will resolve to the same declaration. This is incorrect. Fix.
     fun setDeclaration(node: CSTNode) {
-        if (name != "Name" && name != "IDENTIFIER") {
+        if (name !in listOf("Name", "IDENTIFIER", "ClassInstanceCreationExpression")) {
             throw CSTNodeError("Tried to assign a declaration to a \"$name\" != \"Name\" or \"IDENTIFIER\" node.")
         }
 
@@ -31,13 +55,19 @@ class CSTNode(
     }
 
     fun getDeclaration(): CSTNode {
-        if (name != "Name" && name != "IDENTIFIER") {
+        if (name !in listOf("Name", "IDENTIFIER", "ClassInstanceCreationExpression")) {
             throw CSTNodeError("Tried to retrieve a declaration for a \"$name\" != \"Name\" or \"IDENTIFIER\" node.")
         }
 
         val declaration = CSTNode.declarations[this]
         if (declaration == null) {
-            throw CSTNodeError("\"$name\" node doesn't have a declaration assigned to it.")
+            val serializedName =
+                if (name == "Name")
+                    serializeName(this)
+                else
+                    lexeme
+
+            throw CSTNodeError("\"$serializedName\" \"$name\" node doesn't have a declaration assigned to it.")
         }
 
         return declaration
@@ -62,6 +92,14 @@ class CSTNode(
         }
 
         CSTNode.downCast.add(this)
+    }
+
+    fun isDowncast(): Boolean {
+        if (name != "CastExpression") {
+            throw CSTNodeError("Tried to mark down-cast on a non-cast CSTNode: $name")
+        }
+
+        return this in CSTNode.downCast
     }
 
     fun getDescendant(name: String): CSTNode {
@@ -257,7 +295,19 @@ fun areMethodReturnTypesTheSame(methodHeader: CSTNode, otherMethodHeader: CSTNod
     return true
 }
 
-fun canMethodsReplaceOneAnother(methodHeader1: CSTNode, methodHeader2: CSTNode): Boolean {
+fun canMethodsReplaceOneAnother(node1: CSTNode, node2: CSTNode): Boolean {
+    val methodHeader1 = when (node1.name) {
+        "MethodHeader" -> node1
+        in setOf("AbstractMethodDeclaration", "MethodDeclaration") -> node1.getChild("MethodHeader")
+        else -> throw CSTNodeError("Expected node1 to be of type \"MethodDeclaration\" or \"AbstractMethodDeclaration\", but was \"${node1.name}\"")
+    }
+
+    val methodHeader2 = when (node2.name) {
+        "MethodHeader" -> node2
+        in setOf("AbstractMethodDeclaration", "MethodDeclaration") -> node2.getChild("MethodHeader")
+        else -> throw CSTNodeError("Expected node2 to be of type \"MethodDeclaration\" or \"AbstractMethodDeclaration\", but was \"${node2.name}\"")
+    }
+
     val methodDeclarator1 = methodHeader1.getChild("MethodDeclarator")
     val methodDeclarator2 = methodHeader2.getChild("MethodDeclarator")
 
@@ -325,6 +375,10 @@ fun getDeclarationName(declaration: CSTNode): String {
         return variableDeclarator.getChild("IDENTIFIER").lexeme
     }
 
+    if (declaration.name == "FormalParameter") {
+        return declaration.getChild("IDENTIFIER").lexeme
+    }
+
     throw TriedToGetNameOfAnUnsupportedCSTNode(declaration.name)
 }
 
@@ -341,7 +395,7 @@ fun isInterfaceImplementedByClass(interfaceDeclaration: CSTNode, classDeclaratio
 
     while (true) {
         val queue = LinkedList<CSTNode>()
-        val extendedInterfaces = classDeclaration.getChild("InterfacesOpt").getDescendants("Name").map({ it.getDeclaration() })
+        val extendedInterfaces = currentClass.getChild("InterfacesOpt").getDescendants("Name").map({ it.getDeclaration() })
         queue.addAll(extendedInterfaces)
 
         while (queue.isNotEmpty()) {
@@ -350,7 +404,7 @@ fun isInterfaceImplementedByClass(interfaceDeclaration: CSTNode, classDeclaratio
                 return true
             }
 
-            queue.addAll(interfaceBeingExamined.getChild("ExtendsInterfaceOpt").getDescendants("Name").map({ it.getDeclaration() }))
+            queue.addAll(interfaceBeingExamined.getChild("ExtendsInterfacesOpt").getDescendants("Name").map({ it.getDeclaration() }))
         }
 
         val superOpt = currentClass.getChild("SuperOpt")
@@ -428,4 +482,16 @@ fun getQualifiedIdentifierFromName(name: CSTNode): String {
         throw CSTNodeError("Tried to get qualified identifier from non-name node: \"${name.name}\"")
     }
     return name.getDescendants("IDENTIFIER").map({ it.lexeme }).joinToString(".")
+}
+
+val isClassOrInterfaceDeclaration = { node: CSTNode ->
+    node.name == "ClassDeclaration" || node.name == "InterfaceDeclaration"
+}
+
+fun serializeName(nameNode: CSTNode): String {
+    if (nameNode.name !in listOf("Name", "QualifiedName", "SimpleName")) {
+        throw CSTNodeError("Inside \"serializeName\": Tried to serialize non-name node.")
+    }
+
+    return nameNode.getDescendants("IDENTIFIER").map({ it.lexeme }).joinToString(".")
 }
